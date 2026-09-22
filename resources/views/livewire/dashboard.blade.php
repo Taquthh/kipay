@@ -345,51 +345,48 @@
                     instance: null,
                     failed: false,
                     loading: true,
-                    start() {
+
+                    // Tambahkan parameter withDelay
+                    start(withDelay = true) {
                         this.loading = true;
                         this.failed = false;
 
-                        // Tambahkan jeda 300ms agar animasi Modal HP selesai terbuka sepenuhnya
-                        setTimeout(() => {
+                        const executeCamera = () => {
                             if (typeof Html5Qrcode === 'undefined') {
-                                this.loading = false;
-                                this.failed = true;
-                                return;
+                                this.loading = false; this.failed = true; return;
                             }
-
                             const el = document.getElementById('kipay-reader');
                             if (!el) { this.loading = false; this.failed = true; return; }
 
                             this.instance = new Html5Qrcode('kipay-reader');
                             this.instance.start(
-                                { facingMode: 'environment' }, // Memaksa pakai kamera belakang
+                                { facingMode: 'environment' },
                                 { fps: 10, qrbox: { width: 230, height: 230 } },
                                 (text) => {
                                     this.stop();
                                     @this.call('scan', text);
                                 },
-                                (errorMessage) => {
-                                    // Abaikan error pembacaan frame berulang
-                                }
+                                () => {}
                             ).then(() => {
                                 this.loading = false;
                             }).catch((err) => {
-                                console.error("Kamera Error:", err);
+                                console.error(err);
                                 this.loading = false;
                                 this.failed = true;
-
-                                // Berikan peringatan jika user memakai HTTP (bukan HTTPS) di HP
-                                if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-                                    alert("Akses kamera di HP ditolak oleh browser. Anda harus menggunakan HTTPS atau Localhost.");
-                                }
                             });
-                        }, 300);
+                        };
+
+                        // Jika dibuka otomatis, gunakan delay agar modal iOS siap
+                        // Jika diklik dari tombol "Coba Lagi", jalankan instan tanpa delay!
+                        if (withDelay) {
+                            setTimeout(executeCamera, 400);
+                        } else {
+                            executeCamera();
+                        }
                     },
                     stop() {
                         if (this.instance) {
-                            this.instance.stop()
-                                .then(() => this.instance.clear())
-                                .catch(() => {});
+                            this.instance.stop().then(() => this.instance.clear()).catch(() => {});
                             this.instance = null;
                         }
                     }
