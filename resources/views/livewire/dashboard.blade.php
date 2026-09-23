@@ -257,60 +257,21 @@
                         <p class="text-xs">Membuka kamera...</p>
                     </div>
 
-                    {{-- Panel gagal (kamera/JS) --}}
-                    <div id="kipay-failed" style="display:none" class="absolute inset-x-6 top-1/2 z-20 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
-                        <p id="kipay-fail-message" class="mb-1 text-sm text-slate-600"></p>
-                        <p id="kipay-fail-detail" style="display:none" class="mb-4 text-[10px] text-slate-300"></p>
-                        <div class="flex flex-col gap-2">
-                            <button type="button" id="kipay-retry-btn" onclick="KipayScanner.retry()"
-                                class="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white">Coba Lagi</button>
-                            <button type="button" onclick="document.getElementById('kipay-file-input').click()"
-                                class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Upload QR</button>
+                    {{-- FIX: sebelumnya $errorMessage dari hasil scan (payload salah / merchant sendiri /
+                         merchant tidak ditemukan) TIDAK PERNAH ditampilkan di step 0. Sekarang ditampilkan
+                         sebagai status bar tipis di bawah, bukan popup. --}}
+                    @if ($errorMessage)
+                        <div class="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)] z-20 rounded-xl bg-red-500/90 px-4 py-3 text-center text-xs font-semibold text-white backdrop-blur">
+                            {{ $errorMessage }}
                         </div>
-                    </div>
+                    @endif
 
-                    {{-- bottom sheet: input manual SELALU TAMPIL + Upload QR dari galeri --}}
-                    <div class="absolute inset-x-0 bottom-0 z-20 max-h-[75%] overflow-y-auto rounded-t-3xl bg-white px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] pt-4 shadow-2xl">
-                        <div class="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200"></div>
-
-                        {{-- FIX: sebelumnya $errorMessage dari hasil scan (payload salah / merchant sendiri /
-                             merchant tidak ditemukan) TIDAK PERNAH ditampilkan di step 0, jadi input manual
-                             / scan yang gagal terlihat seperti "diam saja". Sekarang ditampilkan di sini. --}}
-                        @if ($errorMessage)
-                            <div class="mb-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">
-                                {{ $errorMessage }}
-                            </div>
-                        @endif
-
-                        <div class="mb-4 rounded-2xl bg-gradient-to-r from-blue-600 to-emerald-500 px-4 py-3 text-center text-xs font-semibold text-white">
-                            Arahkan kamera, unggah gambar QR, atau ketik payload manual
-                        </div>
-
-                        <div class="mb-4">
-                            <label class="mb-1 block text-xs font-semibold text-slate-500">Masukkan Payload QR Manual (Mode Tester)</label>
-                            <div class="flex gap-2">
-                                <input type="text" id="kipay-manual-input" placeholder="KIPAY-MCH-1-169..."
-                                    onkeydown="if(event.key==='Enter'){event.preventDefault();KipayScanner.submitManualPayload();}"
-                                    class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
-                                <button type="button" onclick="KipayScanner.submitManualPayload()"
-                                    class="shrink-0 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white">Kirim</button>
-                            </div>
-                            <p class="mt-1 text-[10px] text-slate-400">Salin persis payload dari QR merchant (contoh: <code>KIPAY-MCH-1-1732012345</code>).</p>
-                        </div>
-
-                        <button type="button" onclick="document.getElementById('kipay-file-input').click()"
-                            class="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 py-4 transition hover:border-blue-400">
-                            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                                <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5V18a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 18v-1.5M7.5 7.5L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
-                            </span>
-                            <span class="text-sm font-semibold text-slate-700">Upload QR dari Galeri</span>
-                        </button>
-
-                        <input type="file" accept="image/*" id="kipay-file-input" class="hidden"
-                            onchange="KipayScanner.scanFromFile(this.files[0]); this.value = ''">
-
-                        {{-- Debug kamera langsung di layar --}}
-                        <p id="kipay-camera-debug" class="mt-3 break-words text-center text-[10px] text-slate-300"></p>
+                    {{-- Status bar tipis (bukan popup) — dikontrol JS: pesan gagal kamera + tombol coba lagi inline --}}
+                    <div id="kipay-status-bar" style="display:none"
+                        class="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)] z-20 rounded-xl bg-black/70 px-4 py-3 text-center text-xs text-white backdrop-blur">
+                        <p id="kipay-status-message" class="mb-1"></p>
+                        <button type="button" id="kipay-retry-btn" onclick="KipayScanner.retry()"
+                            style="display:none" class="text-xs font-bold text-emerald-300 underline">Coba lagi</button>
                     </div>
                 </div>
             @endif
@@ -451,19 +412,19 @@
         <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
         <script>
             /* =====================================================================
-             | KipayScanner
-             | FIX (dibanding versi sebelumnya):
-             | 1. Semua jalur pengiriman hasil scan (kamera, upload file, input
-             |    manual/tester) sekarang lewat SATU fungsi sendScanPayload(),
-             |    yang mencoba @this.call('scan', value) lalu fallback ke
-             |    Livewire.dispatch('kipay-scan-result', {payload}) kalau @this
-             |    gagal dipanggil karena alasan apapun.
-             | 2. Input manual bisa dikirim dengan tombol Enter, tidak cuma klik.
-             | 3. Pesan error dari server ($errorMessage) sekarang benar-benar
-             |    dirender di Blade pada step 0 (lihat bagian bottom sheet di
-             |    atas) — sebelumnya server sudah mengisi error tapi tidak ada
-             |    tempat untuk menampilkannya, jadi scan yang gagal terlihat
-             |    seperti "diam saja" tanpa umpan balik.
+             | KipayScanner — FOKUS KAMERA SAJA
+             | Sheet Scan QRIS ini sudah tidak punya upload galeri, input manual,
+             | atau panel popup lagi. Input manual/tester sekarang ada di halaman
+             | Beranda (di luar sheet ini). Di sini hanya:
+             | - video kamera + kotak pemindai
+             | - status bar tipis di bawah (bukan popup) untuk pesan gagal kamera
+             |   + tombol "Coba lagi" inline
+             | - $errorMessage dari hasil scan QR (misal merchant tidak ditemukan)
+             |   ditampilkan sebagai status bar tipis yang sama
+             |
+             | Hasil scan tetap dikirim lewat sendScanPayload(), yang mencoba
+             | @this.call('scan', value) lalu fallback ke
+             | Livewire.dispatch('kipay-scan-result', {payload}) kalau @this gagal.
              |=====================================================================*/
 
             window.kipayPendingStream = null;
@@ -511,12 +472,6 @@
 
                 function el(id) { return document.getElementById(id); }
 
-                function debug(msg) {
-                    const node = el('kipay-camera-debug');
-                    if (node) node.textContent = msg;
-                    console.log('[KipayScanner]', msg);
-                }
-
                 function setLoading(isLoading) {
                     const node = el('kipay-loading');
                     if (node) node.style.display = isLoading ? 'flex' : 'none';
@@ -525,43 +480,34 @@
                 function failMessage(reason) {
                     switch (reason) {
                         case 'insecure':
-                            return 'Kamera hanya bisa diakses lewat HTTPS (atau localhost). Gunakan input manual/upload di bawah.';
+                            return 'Kamera hanya bisa diakses lewat HTTPS (atau localhost).';
                         case 'unsupported':
-                            return 'Browser ini tidak mendukung akses kamera. Gunakan input manual/upload di bawah.';
+                            return 'Browser ini tidak mendukung akses kamera.';
                         case 'no-device':
-                            return 'Tidak ada kamera terdeteksi. Gunakan input manual/upload di bawah.';
+                            return 'Tidak ada kamera terdeteksi di perangkat ini.';
                         case 'denied':
-                            return 'Akses kamera ditolak. Cek ikon gembok di address bar untuk mengizinkan, atau gunakan input manual di bawah.';
+                            return 'Akses kamera ditolak. Cek ikon gembok di address bar untuk mengizinkan.';
                         case 'black-feed':
-                            return 'Kamera terbuka tapi tidak mengirim gambar. Tutup aplikasi lain yang memakai kamera, lalu coba lagi.';
+                            return 'Kamera terbuka tapi tidak mengirim gambar. Tutup aplikasi lain yang memakai kamera lalu coba lagi.';
                         case 'timeout':
-                            return 'Kamera tidak merespons setelah beberapa detik. Gunakan input manual/upload di bawah — ini selalu berfungsi.';
+                            return 'Kamera tidak merespons. Coba lagi, atau pakai kode manual di halaman Beranda.';
                         default:
-                            return 'Kamera tidak bisa diakses. Gunakan input manual/upload di bawah.';
+                            return 'Kamera tidak bisa diakses. Coba lagi, atau pakai kode manual di halaman Beranda.';
                     }
                 }
 
-                function setFailed(show, reason, detail) {
-                    const panel = el('kipay-failed');
-                    if (!panel) return;
-                    panel.style.display = show ? 'block' : 'none';
+                // Status bar tipis di bawah layar kamera (bukan popup) — hanya untuk status kamera.
+                function setStatus(show, reason) {
+                    const bar = el('kipay-status-bar');
+                    if (!bar) return;
+                    bar.style.display = show ? 'block' : 'none';
                     if (!show) return;
 
-                    const msgNode = el('kipay-fail-message');
+                    const msgNode = el('kipay-status-message');
                     if (msgNode) msgNode.textContent = failMessage(reason);
 
-                    const detailNode = el('kipay-fail-detail');
-                    if (detailNode) {
-                        if (detail) {
-                            detailNode.textContent = 'Detail teknis: ' + detail;
-                            detailNode.style.display = 'block';
-                        } else {
-                            detailNode.style.display = 'none';
-                        }
-                    }
-
                     const retryBtn = el('kipay-retry-btn');
-                    if (retryBtn) retryBtn.style.display = (reason === 'insecure' || reason === 'unsupported') ? 'none' : 'block';
+                    if (retryBtn) retryBtn.style.display = (reason === 'insecure' || reason === 'unsupported') ? 'none' : 'inline-block';
                 }
 
                 async function checkAvailability() {
@@ -626,9 +572,8 @@
                     if (watchdogId) clearTimeout(watchdogId);
                     watchdogId = setTimeout(() => {
                         if (!frameArrived && stream) {
-                            debug('Kamera terbuka tapi tidak ada frame masuk setelah 4 detik.');
                             stopCamera();
-                            setFailed(true, 'black-feed');
+                            setStatus(true, 'black-feed');
                         }
                     }, 4000);
                 }
@@ -685,29 +630,25 @@
 
                 async function start() {
                     setLoading(true);
-                    setFailed(false);
+                    setStatus(false);
                     frameArrived = false;
-                    debug('Meminta izin kamera...');
 
                     try {
                         if (typeof jsQR === 'undefined') {
-                            debug('jsQR tidak termuat (CDN mungkin diblokir jaringan).');
                             setLoading(false);
-                            setFailed(true, 'other', 'jsQR belum termuat');
+                            setStatus(true, 'other');
                             return;
                         }
 
                         const check = await checkAvailability();
                         if (!check.ok) {
-                            debug('Kamera tidak tersedia: ' + check.reason);
                             setLoading(false);
-                            setFailed(true, check.reason);
+                            setStatus(true, check.reason);
                             return;
                         }
 
                         await openCameraWithTimeout();
 
-                        debug('Kamera aktif.');
                         setLoading(false);
                         checkTorchSupport();
                         armWatchdog();
@@ -719,8 +660,7 @@
                         else if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) reason = 'denied';
                         else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) reason = 'no-device';
 
-                        debug('Gagal: ' + (err && err.name ? err.name : String(err)) + (err && err.message ? ' — ' + err.message : ''));
-                        setFailed(true, reason, err && err.name ? err.name : String(err));
+                        setStatus(true, reason);
                         stopCamera();
                     }
                 }
@@ -745,75 +685,11 @@
                     }).catch(() => {});
                 }
 
-                async function scanFromFile(file) {
-                    if (!file) return;
-                    setLoading(true);
-                    setFailed(false);
-                    debug('Membaca gambar...');
-                    try {
-                        stopCamera();
-
-                        const img = await new Promise((resolve, reject) => {
-                            const image = new Image();
-                            image.onload = () => resolve(image);
-                            image.onerror = reject;
-                            image.src = URL.createObjectURL(file);
-                        });
-
-                        const canvas = el('kipay-canvas');
-                        canvas.width = img.naturalWidth;
-                        canvas.height = img.naturalHeight;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0);
-
-                        let imageData;
-                        try {
-                            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        } catch (secErr) {
-                            setLoading(false);
-                            debug('Gagal membaca gambar (tainted canvas): ' + secErr.message);
-                            setFailed(true, 'other', 'Gambar tidak bisa dibaca (kemungkinan cross-origin). Coba screenshot ulang QR lalu upload hasil screenshot-nya, atau pakai input manual.');
-                            return;
-                        }
-
-                        const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
-
-                        setLoading(false);
-                        if (code && code.data) {
-                            debug('QR terbaca dari gambar.');
-                            sendScanPayload(code.data);
-                        } else {
-                            debug('Tidak ada QR yang terbaca dari gambar ini.');
-                            setFailed(true, 'other', 'jsQR tidak menemukan kode QR pada gambar ini. Coba gambar yang lebih jelas, atau gunakan input manual.');
-                        }
-                    } catch (e) {
-                        setLoading(false);
-                        debug('Gagal membaca gambar: ' + e.message);
-                        sendScanPayload('');
-                    }
-                }
-
-                // Input manual (mode tester) — SELALU TAMPIL, bisa dikirim via klik atau Enter.
-                function submitManualPayload() {
-                    const input = el('kipay-manual-input');
-                    if (!input) return;
-                    const value = (input.value || '').trim();
-                    if (!value) {
-                        debug('Payload manual kosong.');
-                        return;
-                    }
-                    stopCamera();
-                    debug('Mengirim payload manual: ' + value);
-                    sendScanPayload(value);
-                }
-
                 return {
                     start: start,
                     stop: stop,
                     retry: retry,
                     toggleTorch: toggleTorch,
-                    scanFromFile: scanFromFile,
-                    submitManualPayload: submitManualPayload,
                 };
             })();
 
