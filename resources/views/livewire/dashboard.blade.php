@@ -276,7 +276,8 @@
 
                     {{-- Panel gagal — pesan sekarang mengikuti alasan spesifik (izin ditolak / tidak ada kamera / http / tidak didukung) --}}
                     <div x-show="failed" x-cloak class="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
-                        <p class="mb-4 text-sm text-slate-600" x-text="failMessage()"></p>
+                        <p class="mb-1 text-sm text-slate-600" x-text="failMessage()"></p>
+                        <p x-show="failDetail" x-cloak class="mb-4 text-[10px] text-slate-300" x-text="'Detail teknis: ' + failDetail"></p>
                         <div class="flex flex-col gap-2">
                             <button type="button" x-show="failReason !== 'insecure' && failReason !== 'unsupported'" x-cloak
                                 x-on:click="window.kipayPrewarmCamera(); start()"
@@ -326,16 +327,18 @@
 
                         {{-- ============================================================================
                              TESTER: TOGGLE PAYLOAD MANUAL (tersedia juga saat kamera hidup normal, untuk
-                             menguji payload tertentu tanpa scan fisik). HAPUS SELURUH BLOK INI (dari
-                             komentar TESTER START sampai TESTER END) begitu alur kamera sudah dikonfirmasi
-                             aman & berjalan di semua perangkat target.
+                             menguji payload tertentu tanpa scan fisik). Sengaja TIDAK pakai x-data
+                             bersarang (nested) di sini — dipakai langsung dari scope kipayScanner()
+                             lewat testerOpen/submitTesterPayload supaya tidak ada isu scope Alpine sama
+                             sekali. HAPUS SELURUH BLOK INI (dari komentar TESTER START sampai TESTER END)
+                             begitu alur kamera sudah dikonfirmasi aman & berjalan di semua perangkat target.
                              ============================================================================ --}}
                         {{-- TESTER START --}}
-                        <div class="mt-3" x-data="{ open: false }">
-                            <button type="button" x-on:click="open = !open" class="w-full text-center text-[11px] font-semibold text-slate-400 underline decoration-dotted">
+                        <div class="mt-3">
+                            <button type="button" x-on:click="testerOpen = !testerOpen" class="w-full text-center text-[11px] font-semibold text-slate-400 underline decoration-dotted">
                                 Mode tester: masukkan payload manual
                             </button>
-                            <div x-show="open" x-cloak class="mt-2 flex gap-2">
+                            <div x-show="testerOpen" x-cloak class="mt-2 flex gap-2">
                                 <input type="text" x-model="testerPayload" placeholder="KIPAY-MCH-1-169..."
                                     class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
                                 <button type="button" x-on:click="submitTesterPayload()" class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Kirim</button>
@@ -523,16 +526,35 @@
                 window.kipayPendingStream.catch(() => {});
             };
 
-            document.addEventListener('alpine:init', () => {
-                Alpine.data('kipayScanner', () => ({
+            /* =====================================================================
+             | PENDAFTARAN KOMPONEN ALPINE
+             | Sebelumnya didaftarkan lewat Alpine.data(...) di dalam event 'alpine:init'.
+             | Masalahnya: sheet scan (dan x-data="kipayScanner()" di dalamnya) baru
+             | dirender ke DOM belakangan — setelah Livewire memproses klik "Scan QRIS"
+             | dan melakukan morph DOM — jadi urutan render vs waktu event 'alpine:init'
+             | bisa meleset di sebagian browser/koneksi, membuat Alpine gagal menemukan
+             | "kipayScanner" sama sekali. Kalau itu terjadi, SELURUH komponen (termasuk
+             | kamera dan semua tombol di dalamnya, termasuk "Kirim" tester) berhenti
+             | merespons — persis gejala "layar hitam + tombol tidak bisa dipencet".
+             |
+             | Perbaikan: daftarkan sebagai fungsi GLOBAL biasa (window.kipayScanner),
+             | dipanggil langsung oleh x-data="kipayScanner()" tanpa bergantung timing
+             | event apa pun. Fungsi ini sudah pasti ada sejak script ini pertama kali
+             | dieksekusi (saat halaman dimuat), jauh sebelum sheet scan bisa dibuka.
+             |=====================================================================*/
+            window.kipayScanner = function () {
+                return {
                     stream: null,
                     rafId: null,
                     failed: false,
-                    failReason: '', // 'insecure' | 'unsupported' | 'no-device' | 'denied' | 'other'
+                    failReason: '', // 'insecure' | 'unsupported' | 'no-device' | 'denied' | 'black-feed' | 'other'
+                    failDetail: '', // pesan teknis mentah (nama error JS), ditampilkan kecil untuk debugging
                     loading: true,
                     hasTorch: false,
                     torchOn: false,
                     _track: null,
+                    _frameArrived: false,
+                    _watchdogId: null,
 
                     // ========================================================================
                     // TESTER: INPUT PAYLOAD MANUAL
@@ -540,9 +562,10 @@
                     // Hapus properti ini bersamaan dengan blok HTML "TESTER START/END" begitu
                     // scan kamera sudah dikonfirmasi jalan di perangkat target.
                     // ========================================================================
+                    testerOpen: false,
                     testerPayload: '',
                     submitTesterPayload() {
-                        const value = this.testerPayload.trim();
+                        const value = (this.testerPayload || '').trim();
                         if (!value) return;
                         this.stopCamera();
                         @this.call('scan', value);
@@ -559,6 +582,8 @@
                                 return 'Tidak ada kamera yang terdeteksi di perangkat ini. Silakan unggah gambar QR dari galeri, atau gunakan mode tester di bawah.';
                             case 'denied':
                                 return 'Akses kamera ditolak. Izinkan akses kamera lewat pengaturan browser (ikon gembok di address bar), lalu tekan "Coba Lagi".';
+                            case 'black-feed':
+                                return 'Kamera terbuka tapi tidak mengirim gambar. Kemungkinan sedang dipakai aplikasi/tab lain, atau driver kamera bermasalah. Tutup aplikasi lain yang memakai kamera, lalu coba lagi.';
                             default:
                                 return 'Kamera tidak bisa diakses. Pastikan browser diizinkan mengakses kamera, lalu coba lagi. Atau unggah gambar QR dari galeri.';
                         }
@@ -591,33 +616,41 @@
                         this.loading = true;
                         this.failed = false;
                         this.failReason = '';
+                        this.failDetail = '';
                         this.hasTorch = false;
                         this.torchOn = false;
-
-                        if (typeof jsQR === 'undefined') {
-                            this.loading = false;
-                            this.failed = true;
-                            this.failReason = 'other';
-                            return;
-                        }
-
-                        const check = await this.checkAvailability();
-                        if (!check.ok) {
-                            this.loading = false;
-                            this.failed = true;
-                            this.failReason = check.reason;
-                            return;
-                        }
+                        this._frameArrived = false;
+                        if (this._watchdogId) { clearTimeout(this._watchdogId); this._watchdogId = null; }
 
                         try {
+                            if (typeof jsQR === 'undefined') {
+                                console.error('[KipayScanner] jsQR tidak termuat (kemungkinan CDN diblokir jaringan).');
+                                this.loading = false;
+                                this.failed = true;
+                                this.failReason = 'other';
+                                this.failDetail = 'jsQR belum termuat';
+                                return;
+                            }
+
+                            const check = await this.checkAvailability();
+                            if (!check.ok) {
+                                console.warn('[KipayScanner] kamera tidak tersedia:', check.reason);
+                                this.loading = false;
+                                this.failed = true;
+                                this.failReason = check.reason;
+                                return;
+                            }
+
                             await this.openCamera();
                             this.loading = false;
                             this.checkTorchSupport();
+                            this.armFrameWatchdog();
                             this.loopScan();
                         } catch (err) {
-                            console.error(err);
+                            console.error('[KipayScanner] gagal membuka kamera:', err);
                             this.loading = false;
                             this.failed = true;
+                            this.failDetail = err && err.name ? err.name : String(err);
                             if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
                                 this.failReason = 'denied';
                             } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) {
@@ -626,6 +659,21 @@
                                 this.failReason = 'other';
                             }
                         }
+                    },
+
+                    // Jaga-jaga untuk kasus getUserMedia() SUKSES (tidak error) tapi video tidak
+                    // pernah benar-benar mengirim frame (layar hitam terus) — mis. kamera sedang
+                    // dipakai aplikasi lain, atau driver bermasalah. Tanpa ini, UI akan diam di
+                    // "kamera siap" selamanya walau sebenarnya tidak ada gambar sama sekali.
+                    armFrameWatchdog() {
+                        this._watchdogId = setTimeout(() => {
+                            if (!this._frameArrived && this.stream) {
+                                console.warn('[KipayScanner] tidak ada frame video setelah 4 detik — kemungkinan feed hitam.');
+                                this.stopCamera();
+                                this.failed = true;
+                                this.failReason = 'black-feed';
+                            }
+                        }, 4000);
                     },
 
                     async openCamera() {
@@ -669,7 +717,8 @@
 
                         const tick = () => {
                             if (!this.stream) return; // kamera sudah ditutup, hentikan loop
-                            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                                this._frameArrived = true; // penanda untuk armFrameWatchdog()
                                 canvas.width = video.videoWidth;
                                 canvas.height = video.videoHeight;
                                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -693,6 +742,7 @@
                     },
 
                     stopCamera() {
+                        if (this._watchdogId) { clearTimeout(this._watchdogId); this._watchdogId = null; }
                         if (this.rafId) cancelAnimationFrame(this.rafId);
                         this.rafId = null;
                         if (this.stream) {
@@ -753,8 +803,8 @@
                             @this.call('scan', '');
                         }
                     },
-                }));
-            });
+                };
+            };
 
             /* =====================================================================
              | KODE LAMA (html5-qrcode) — DIKOMENTARI, BUKAN DIHAPUS.
