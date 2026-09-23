@@ -266,12 +266,25 @@
                         </div>
                     @endif
 
-                    {{-- Status bar tipis (bukan popup) — dikontrol JS: pesan gagal kamera + tombol coba lagi inline --}}
-                    <div id="kipay-status-bar" style="display:none"
-                        class="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)] z-20 rounded-xl bg-black/70 px-4 py-3 text-center text-xs text-white backdrop-blur">
-                        <p id="kipay-status-message" class="mb-1"></p>
-                        <button type="button" id="kipay-retry-btn" onclick="KipayScanner.retry()"
-                            style="display:none" class="text-xs font-bold text-emerald-300 underline">Coba lagi</button>
+                    {{-- Kontrol bawah: kamera, pilih foto, dan pesan status --}}
+                    <div class="absolute inset-x-4 bottom-[calc(env(safe-area-inset-bottom,0px)+1rem)] z-20 space-y-2">
+                        <div id="kipay-status-bar" style="display:none"
+                            class="rounded-xl bg-black/70 px-4 py-3 text-center text-xs text-white backdrop-blur">
+                            <p id="kipay-status-message" class="mb-1"></p>
+                            <button type="button" id="kipay-retry-btn" onclick="KipayScanner.retry()"
+                                style="display:none" class="text-xs font-bold text-emerald-300 underline">Coba lagi</button>
+                        </div>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="KipayScanner.retry()"
+                                class="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-bold text-slate-800 shadow-lg">
+                                Buka kamera
+                            </button>
+                            <label class="flex flex-1 cursor-pointer items-center justify-center rounded-xl bg-white/15 px-4 py-3 text-sm font-bold text-white backdrop-blur">
+                                Pilih foto
+                                <input id="kipay-image-input" type="file" accept="image/*" capture="environment" class="sr-only"
+                                    onchange="KipayScanner.readImage(this.files && this.files[0])">
+                            </label>
+                        </div>
                     </div>
                 </div>
             @endif
@@ -468,6 +481,7 @@
                 let watchdogId = null;
                 let frameArrived = false;
                 let track = null;
+                let isStarting = false; // guard: cegah start() dipanggil dobel/bertumpuk
                 const CAMERA_OPEN_TIMEOUT_MS = 8000;
 
                 function el(id) { return document.getElementById(id); }
@@ -599,11 +613,12 @@
                         if (!stream) return;
                         if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
                             frameArrived = true;
-                            canvas.width = video.videoWidth;
-                            canvas.height = video.videoHeight;
+                            const scale = Math.min(1, 1280 / video.videoWidth);
+                            canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+                            canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
                             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+                            const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' });
                             if (code && code.data) {
                                 stopCamera();
                                 sendScanPayload(code.data);
@@ -615,7 +630,47 @@
                     rafId = requestAnimationFrame(tick);
                 }
 
+                function readImage(file) {
+                    if (!file || !file.type.startsWith('image/')) return;
+                    stopCamera();
+                    setLoading(true);
+                    setStatus(false);
+
+                    const image = new Image();
+                    const url = URL.createObjectURL(file);
+                    image.onload = function () {
+                        try {
+                            const canvas = el('kipay-canvas');
+                            if (!canvas) return;
+                            const scale = Math.min(1, 1600 / image.naturalWidth);
+                            canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+                            canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+                            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                            ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                            const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                            const code = jsQR(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
+                            if (code && code.data) {
+                                sendScanPayload(code.data);
+                            } else {
+                                setStatus(true, 'other');
+                                const message = el('kipay-status-message');
+                                if (message) message.textContent = 'QR tidak terbaca. Gunakan foto yang lebih jelas dan coba lagi.';
+                            }
+                        } finally {
+                            URL.revokeObjectURL(url);
+                            setLoading(false);
+                        }
+                    };
+                    image.onerror = function () {
+                        URL.revokeObjectURL(url);
+                        setLoading(false);
+                        setStatus(true, 'other');
+                    };
+                    image.src = url;
+                }
+
                 function stopCamera() {
+                    isStarting = false;
                     if (watchdogId) { clearTimeout(watchdogId); watchdogId = null; }
                     if (rafId) cancelAnimationFrame(rafId);
                     rafId = null;
@@ -629,12 +684,25 @@
                 }
 
                 async function start() {
+                    // Kalau sedang proses membuka kamera atau kamera sudah aktif,
+                    // JANGAN mulai lagi — request getUserMedia yang tumpang tindih
+                    // di beberapa browser bisa saling mengganjal & menggantung
+                    // selamanya di "Membuka kamera...".
+                    if (isStarting || stream) {
+                        console.log('[KipayScanner] start() diabaikan, sudah berjalan.');
+                        return;
+                    }
+                    isStarting = true;
+
                     setLoading(true);
                     setStatus(false);
                     frameArrived = false;
+                    console.log('[KipayScanner] Mulai membuka kamera...');
 
                     try {
                         if (typeof jsQR === 'undefined') {
+                            console.error('[KipayScanner] jsQR tidak termuat (CDN mungkin diblokir).');
+                            isStarting = false;
                             setLoading(false);
                             setStatus(true, 'other');
                             return;
@@ -642,6 +710,8 @@
 
                         const check = await checkAvailability();
                         if (!check.ok) {
+                            console.warn('[KipayScanner] Kamera tidak tersedia:', check.reason);
+                            isStarting = false;
                             setLoading(false);
                             setStatus(true, check.reason);
                             return;
@@ -649,17 +719,21 @@
 
                         await openCameraWithTimeout();
 
+                        console.log('[KipayScanner] Kamera aktif.');
+                        isStarting = false;
                         setLoading(false);
                         checkTorchSupport();
                         armWatchdog();
                         loopScan();
                     } catch (err) {
+                        isStarting = false;
                         setLoading(false);
                         let reason = 'other';
                         if (err && err.name === 'TimeoutError') reason = 'timeout';
                         else if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) reason = 'denied';
                         else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) reason = 'no-device';
 
+                        console.error('[KipayScanner] Gagal membuka kamera:', err && err.name, err && err.message);
                         setStatus(true, reason);
                         stopCamera();
                     }
@@ -689,6 +763,7 @@
                     start: start,
                     stop: stop,
                     retry: retry,
+                    readImage: readImage,
                     toggleTorch: toggleTorch,
                 };
             })();
