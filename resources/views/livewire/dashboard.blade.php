@@ -230,13 +230,13 @@
     @if ($showScan)
         <div class="fixed inset-0 z-50 bg-black" wire:key="scan-sheet">
 
-            {{-- STEP 0 — kamera / upload, tampilan penuh layar --}}
+            {{-- STEP 0 — kamera / upload, tampilan penuh layar (JS murni, TANPA Alpine sama sekali) --}}
             @if ($payStep === 0)
-                <div x-data="kipayScanner()" x-init="start()" x-on:destroy="stop()" class="relative h-full w-full overflow-hidden">
+                <div id="kipay-scan-root" class="relative h-full w-full overflow-hidden">
 
                     {{-- video kamera memenuhi layar (diambil langsung via getUserMedia, didekode dengan jsQR) --}}
-                    <video x-ref="video" autoplay playsinline muted class="absolute inset-0 h-full w-full bg-black object-cover"></video>
-                    <canvas x-ref="canvas" class="hidden"></canvas>
+                    <video id="kipay-video" autoplay playsinline muted class="absolute inset-0 h-full w-full bg-black object-cover"></video>
+                    <canvas id="kipay-canvas" class="hidden"></canvas>
 
                     {{-- overlay gelap tipis agar chrome tetap terbaca di atas kamera --}}
                     <div class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70"></div>
@@ -247,9 +247,8 @@
                             <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                         </button>
                         <p class="text-sm font-semibold text-white">Scan QRIS</p>
-                        <button type="button" x-show="hasTorch" x-cloak x-on:click="toggleTorch()"
-                            class="flex h-10 w-10 items-center justify-center rounded-full text-white backdrop-blur"
-                            :class="torchOn ? 'bg-emerald-400/80' : 'bg-white/15'">
+                        <button type="button" id="kipay-torch-btn" onclick="KipayScanner.toggleTorch()" style="display:none"
+                            class="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur">
                             <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-6.364-2.386 1.591-1.591M3 12h2.25m.386-6.364 1.591 1.591M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                         </button>
                     </div>
@@ -266,7 +265,7 @@
 
                     <p class="absolute inset-x-0 top-[calc(50%+9rem)] text-center text-xs text-white/80">Arahkan kamera ke kode QR pembayaran</p>
 
-                    <div x-show="loading" x-cloak class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 text-white">
+                    <div id="kipay-loading" class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 text-white">
                         <svg class="h-7 w-7 animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
@@ -274,34 +273,33 @@
                         <p class="text-xs">Membuka kamera...</p>
                     </div>
 
-                    {{-- Panel gagal — pesan sekarang mengikuti alasan spesifik (izin ditolak / tidak ada kamera / http / tidak didukung) --}}
-                    <div x-show="failed" x-cloak class="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
-                        <p class="mb-1 text-sm text-slate-600" x-text="failMessage()"></p>
-                        <p x-show="failDetail" x-cloak class="mb-4 text-[10px] text-slate-300" x-text="'Detail teknis: ' + failDetail"></p>
+                    {{-- Panel gagal — pesan mengikuti alasan spesifik (izin ditolak / tidak ada kamera / http / tidak didukung / feed hitam) --}}
+                    <div id="kipay-failed" style="display:none" class="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
+                        <p id="kipay-fail-message" class="mb-1 text-sm text-slate-600"></p>
+                        <p id="kipay-fail-detail" style="display:none" class="mb-4 text-[10px] text-slate-300"></p>
                         <div class="flex flex-col gap-2">
-                            <button type="button" x-show="failReason !== 'insecure' && failReason !== 'unsupported'" x-cloak
-                                x-on:click="window.kipayPrewarmCamera(); start()"
+                            <button type="button" id="kipay-retry-btn" onclick="KipayScanner.retry()"
                                 class="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white">Coba Lagi</button>
-                            <button type="button" x-on:click="$refs.fileInput.click()"
+                            <button type="button" onclick="document.getElementById('kipay-file-input').click()"
                                 class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Upload QR</button>
                         </div>
 
                         {{-- ============================================================================
-                             TESTER: INPUT PAYLOAD MANUAL
-                             Dipakai saat perangkat/browser tester tidak punya kamera (mis. laptop tanpa
-                             webcam) atau saat butuh menguji payload tertentu (mis. "KIPAY-MCH-1-12345")
-                             tanpa harus mencetak QR fisik dulu. HAPUS SELURUH BLOK INI (dari komentar
-                             TESTER START sampai TESTER END) begitu alur scan kamera sudah dikonfirmasi
-                             aman & berjalan di semua perangkat target.
+                             TESTER: INPUT PAYLOAD MANUAL — versi ini tampil di panel gagal (kamera error).
+                             Tombol pakai onclick="" native, bukan Alpine, jadi tidak bergantung directive
+                             apa pun untuk berfungsi. HAPUS SELURUH BLOK INI (dari komentar TESTER START
+                             sampai TESTER END) begitu alur scan kamera sudah dikonfirmasi aman & berjalan
+                             di semua perangkat target.
                              ============================================================================ --}}
                         {{-- TESTER START --}}
                         <div class="mt-4 border-t border-slate-100 pt-4 text-left">
                             <p class="mb-2 text-xs font-semibold text-slate-400">Mode tester — masukkan payload QR manual</p>
-                            <form x-on:submit.prevent="submitTesterPayload()" class="flex gap-2">
-                                <input type="text" x-model="testerPayload" placeholder="KIPAY-MCH-1-169..."
+                            <div class="flex gap-2">
+                                <input type="text" id="kipay-tester-input-failed" placeholder="KIPAY-MCH-1-169..."
                                     class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
-                                <button type="submit" class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Kirim</button>
-                            </form>
+                                <button type="button" onclick="KipayScanner.submitTesterPayload('kipay-tester-input-failed')"
+                                    class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Kirim</button>
+                            </div>
                         </div>
                         {{-- TESTER END --}}
                     </div>
@@ -314,7 +312,7 @@
                             Arahkan kamera ke kode QR atau unggah gambar QR untuk membayar
                         </div>
 
-                        <button type="button" x-on:click="$refs.fileInput.click()"
+                        <button type="button" onclick="document.getElementById('kipay-file-input').click()"
                             class="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 py-4 transition hover:border-blue-400">
                             <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5V18a2.25 2.25 0 002.25 2.25h13.5A2.25 2.25 0 0021 18v-1.5M7.5 7.5L12 3m0 0l4.5 4.5M12 3v13.5"/></svg>
@@ -322,26 +320,26 @@
                             <span class="text-sm font-semibold text-slate-700">Upload QR dari Galeri</span>
                         </button>
 
-                        <input type="file" accept="image/*" x-ref="fileInput" class="hidden"
-                            x-on:change="scanFromFile($event.target.files[0]); $event.target.value = ''">
+                        <input type="file" accept="image/*" id="kipay-file-input" class="hidden"
+                            onchange="KipayScanner.scanFromFile(this.files[0]); this.value = ''">
 
                         {{-- ============================================================================
                              TESTER: TOGGLE PAYLOAD MANUAL (tersedia juga saat kamera hidup normal, untuk
-                             menguji payload tertentu tanpa scan fisik). Sengaja TIDAK pakai x-data
-                             bersarang (nested) di sini — dipakai langsung dari scope kipayScanner()
-                             lewat testerOpen/submitTesterPayload supaya tidak ada isu scope Alpine sama
-                             sekali. HAPUS SELURUH BLOK INI (dari komentar TESTER START sampai TESTER END)
-                             begitu alur kamera sudah dikonfirmasi aman & berjalan di semua perangkat target.
+                             menguji payload tertentu tanpa scan fisik). Tombol pakai onclick="" native.
+                             HAPUS SELURUH BLOK INI (dari komentar TESTER START sampai TESTER END) begitu
+                             alur kamera sudah dikonfirmasi aman & berjalan di semua perangkat target.
                              ============================================================================ --}}
                         {{-- TESTER START --}}
                         <div class="mt-3">
-                            <button type="button" x-on:click="testerOpen = !testerOpen" class="w-full text-center text-[11px] font-semibold text-slate-400 underline decoration-dotted">
+                            <button type="button" onclick="KipayScanner.toggleTester()"
+                                class="w-full text-center text-[11px] font-semibold text-slate-400 underline decoration-dotted">
                                 Mode tester: masukkan payload manual
                             </button>
-                            <div x-show="testerOpen" x-cloak class="mt-2 flex gap-2">
-                                <input type="text" x-model="testerPayload" placeholder="KIPAY-MCH-1-169..."
+                            <div id="kipay-tester-panel" style="display:none" class="mt-2 gap-2">
+                                <input type="text" id="kipay-tester-input-main" placeholder="KIPAY-MCH-1-169..."
                                     class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
-                                <button type="button" x-on:click="submitTesterPayload()" class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Kirim</button>
+                                <button type="button" onclick="KipayScanner.submitTesterPayload('kipay-tester-input-main')"
+                                    class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Kirim</button>
                             </div>
                         </div>
                         {{-- TESTER END --}}
@@ -492,22 +490,26 @@
         <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
         <script>
             /* =====================================================================
-             | PREWARM KAMERA
-             | Browser (terutama Safari iOS, dan makin ketat di Android) hanya mengizinkan
-             | prompt kamera jika getUserMedia() dipanggil LANGSUNG di dalam event klik
-             | pengguna. Karena tombol scan juga memicu wire:click (roundtrip ke server)
-             | sebelum sheet scan tampil, "izin" dari klik itu bisa keburu hangus ketika
-             | Alpine baru memanggil kamera setelah DOM diperbarui — hasilnya kamera
-             | ditolak (NotAllowedError) meski perangkat sebenarnya punya kamera.
+             | KipayScanner — JS MURNI, TANPA ALPINE SAMA SEKALI
+             | Sebelumnya bagian ini pakai Alpine.js (x-data/x-show/x-model dst).
+             | Di beberapa environment, Alpine tidak konsisten memproses ulang
+             | elemen yang baru dimasukkan Livewire lewat morph, sehingga seluruh
+             | komponen (kamera + semua tombol di dalamnya) berhenti merespons.
+             | Supaya tidak bergantung pada itu sama sekali, semua interaksi di
+             | sini pakai onclick="" / onchange="" native (persis seperti tombol
+             | "Scan QRIS" di luar, yang sudah terbukti selalu berfungsi), dan
+             | status (loading/gagal) ditulis langsung ke DOM lewat getElementById,
+             | tanpa reactivity framework apa pun.
              |
-             | Solusi: panggil getUserMedia() langsung di onclick mentah (bukan menunggu
-             | Livewire), simpan Promise-nya, lalu begitu sheet scan render, pakai ulang
-             | stream tersebut alih-alih meminta izin lagi.
+             | Kapan kamera mulai/berhenti dipantau pakai MutationObserver yang
+             | mengawasi kapan elemen #kipay-scan-root muncul/hilang dari DOM —
+             | ini juga tidak bergantung pada Alpine maupun hook Livewire tertentu,
+             | jadi aman terhadap versi Livewire apa pun.
              |=====================================================================*/
+
+            /* ---------- PREWARM KAMERA (dipanggil dari onclick tombol "Scan QRIS") ---------- */
             window.kipayPendingStream = null;
             window.kipayPrewarmCamera = function () {
-                // Jangan coba prewarm sama sekali kalau lingkungannya jelas tidak mendukung —
-                // hindari melempar exception yang tidak tertangani di tengah handler onclick.
                 if (!window.isSecureContext) return;
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
 
@@ -515,358 +517,349 @@
                     .getUserMedia({ video: { facingMode: { exact: 'environment' } }, audio: false })
                     .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }))
                     .catch((err) => {
-                        // Biarkan Alpine yang menampilkan pesan error yang tepat saat sheet dibuka;
-                        // di sini cukup pastikan promise "pending" tidak menggantung dengan rejection.
                         window.kipayPendingStream = null;
                         throw err;
                     });
 
-                // Serap rejection supaya tidak muncul "Uncaught (in promise)" di console kalau
-                // sheet scan belum tentu jadi dibuka setelah prewarm ini.
+                // Serap rejection supaya tidak muncul "Uncaught (in promise)" kalau sheet scan
+                // ternyata tidak jadi dibuka setelah prewarm ini.
                 window.kipayPendingStream.catch(() => {});
             };
 
-            /* =====================================================================
-             | PENDAFTARAN KOMPONEN ALPINE
-             | Sebelumnya didaftarkan lewat Alpine.data(...) di dalam event 'alpine:init'.
-             | Masalahnya: sheet scan (dan x-data="kipayScanner()" di dalamnya) baru
-             | dirender ke DOM belakangan — setelah Livewire memproses klik "Scan QRIS"
-             | dan melakukan morph DOM — jadi urutan render vs waktu event 'alpine:init'
-             | bisa meleset di sebagian browser/koneksi, membuat Alpine gagal menemukan
-             | "kipayScanner" sama sekali. Kalau itu terjadi, SELURUH komponen (termasuk
-             | kamera dan semua tombol di dalamnya, termasuk "Kirim" tester) berhenti
-             | merespons — persis gejala "layar hitam + tombol tidak bisa dipencet".
-             |
-             | Perbaikan: daftarkan sebagai fungsi GLOBAL biasa (window.kipayScanner),
-             | dipanggil langsung oleh x-data="kipayScanner()" tanpa bergantung timing
-             | event apa pun. Fungsi ini sudah pasti ada sejak script ini pertama kali
-             | dieksekusi (saat halaman dimuat), jauh sebelum sheet scan bisa dibuka.
-             |=====================================================================*/
-            window.kipayScanner = function () {
-                return {
-                    stream: null,
-                    rafId: null,
-                    failed: false,
-                    failReason: '', // 'insecure' | 'unsupported' | 'no-device' | 'denied' | 'black-feed' | 'other'
-                    failDetail: '', // pesan teknis mentah (nama error JS), ditampilkan kecil untuk debugging
-                    loading: true,
-                    hasTorch: false,
-                    torchOn: false,
-                    _track: null,
-                    _frameArrived: false,
-                    _watchdogId: null,
+            window.KipayScanner = (function () {
+                let stream = null;
+                let rafId = null;
+                let watchdogId = null;
+                let frameArrived = false;
+                let track = null;
 
-                    // ========================================================================
-                    // TESTER: INPUT PAYLOAD MANUAL
-                    // Properti & method di bawah ini hanya dipakai oleh blok input tester di HTML.
-                    // Hapus properti ini bersamaan dengan blok HTML "TESTER START/END" begitu
-                    // scan kamera sudah dikonfirmasi jalan di perangkat target.
-                    // ========================================================================
-                    testerOpen: false,
-                    testerPayload: '',
-                    submitTesterPayload() {
-                        const value = (this.testerPayload || '').trim();
-                        if (!value) return;
-                        this.stopCamera();
-                        @this.call('scan', value);
-                    },
-                    // ==================== END TESTER ====================
+                function el(id) {
+                    return document.getElementById(id);
+                }
 
-                    failMessage() {
-                        switch (this.failReason) {
-                            case 'insecure':
-                                return 'Kamera hanya bisa diakses lewat koneksi HTTPS (atau localhost). Buka halaman ini lewat HTTPS, lalu coba lagi — atau gunakan upload/mode tester di bawah.';
-                            case 'unsupported':
-                                return 'Browser ini tidak mendukung akses kamera. Coba gunakan Chrome/Safari versi terbaru, atau unggah gambar QR dari galeri.';
-                            case 'no-device':
-                                return 'Tidak ada kamera yang terdeteksi di perangkat ini. Silakan unggah gambar QR dari galeri, atau gunakan mode tester di bawah.';
-                            case 'denied':
-                                return 'Akses kamera ditolak. Izinkan akses kamera lewat pengaturan browser (ikon gembok di address bar), lalu tekan "Coba Lagi".';
-                            case 'black-feed':
-                                return 'Kamera terbuka tapi tidak mengirim gambar. Kemungkinan sedang dipakai aplikasi/tab lain, atau driver kamera bermasalah. Tutup aplikasi lain yang memakai kamera, lalu coba lagi.';
-                            default:
-                                return 'Kamera tidak bisa diakses. Pastikan browser diizinkan mengakses kamera, lalu coba lagi. Atau unggah gambar QR dari galeri.';
-                        }
-                    },
+                function setLoading(isLoading) {
+                    const node = el('kipay-loading');
+                    if (node) node.style.display = isLoading ? 'flex' : 'none';
+                }
 
-                    // Mengecek ketersediaan kamera SEBELUM benar-benar meminta izin, supaya pesan
-                    // error yang ditampilkan sesuai penyebab sebenarnya (bukan cuma "gagal" generik).
-                    async checkAvailability() {
-                        if (!window.isSecureContext) {
-                            return { ok: false, reason: 'insecure' };
+                function failMessage(reason) {
+                    switch (reason) {
+                        case 'insecure':
+                            return 'Kamera hanya bisa diakses lewat koneksi HTTPS (atau localhost). Buka halaman ini lewat HTTPS, lalu coba lagi — atau gunakan upload/mode tester di bawah.';
+                        case 'unsupported':
+                            return 'Browser ini tidak mendukung akses kamera. Coba gunakan Chrome/Safari versi terbaru, atau unggah gambar QR dari galeri.';
+                        case 'no-device':
+                            return 'Tidak ada kamera yang terdeteksi di perangkat ini. Silakan unggah gambar QR dari galeri, atau gunakan mode tester di bawah.';
+                        case 'denied':
+                            return 'Akses kamera ditolak. Izinkan akses kamera lewat pengaturan browser (ikon gembok di address bar), lalu tekan "Coba Lagi".';
+                        case 'black-feed':
+                            return 'Kamera terbuka tapi tidak mengirim gambar. Kemungkinan sedang dipakai aplikasi/tab lain, atau driver kamera bermasalah. Tutup aplikasi lain yang memakai kamera, lalu coba lagi.';
+                        default:
+                            return 'Kamera tidak bisa diakses. Pastikan browser diizinkan mengakses kamera, lalu coba lagi. Atau unggah gambar QR dari galeri.';
+                    }
+                }
+
+                function setFailed(show, reason, detail) {
+                    const panel = el('kipay-failed');
+                    if (!panel) return;
+                    panel.style.display = show ? 'block' : 'none';
+                    if (!show) return;
+
+                    const msgNode = el('kipay-fail-message');
+                    if (msgNode) msgNode.textContent = failMessage(reason);
+
+                    const detailNode = el('kipay-fail-detail');
+                    if (detailNode) {
+                        if (detail) {
+                            detailNode.textContent = 'Detail teknis: ' + detail;
+                            detailNode.style.display = 'block';
+                        } else {
+                            detailNode.style.display = 'none';
                         }
-                        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                            return { ok: false, reason: 'unsupported' };
+                    }
+
+                    const retryBtn = el('kipay-retry-btn');
+                    if (retryBtn) {
+                        retryBtn.style.display = (reason === 'insecure' || reason === 'unsupported') ? 'none' : 'block';
+                    }
+                }
+
+                async function checkAvailability() {
+                    if (!window.isSecureContext) {
+                        return { ok: false, reason: 'insecure' };
+                    }
+                    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                        return { ok: false, reason: 'unsupported' };
+                    }
+                    try {
+                        const devices = await navigator.mediaDevices.enumerateDevices();
+                        const hasVideoInput = devices.some((d) => d.kind === 'videoinput');
+                        if (!hasVideoInput) {
+                            return { ok: false, reason: 'no-device' };
                         }
+                    } catch (e) {
+                        // Sebagian browser membatasi enumerateDevices() sebelum izin diberikan —
+                        // kalau gagal total, tetap lanjut coba getUserMedia langsung.
+                    }
+                    return { ok: true };
+                }
+
+                async function openCamera() {
+                    if (window.kipayPendingStream) {
+                        const pending = window.kipayPendingStream;
+                        window.kipayPendingStream = null;
                         try {
-                            const devices = await navigator.mediaDevices.enumerateDevices();
-                            const hasVideoInput = devices.some((d) => d.kind === 'videoinput');
-                            if (!hasVideoInput) {
-                                return { ok: false, reason: 'no-device' };
-                            }
+                            stream = await pending;
                         } catch (e) {
-                            // Sebagian browser membatasi detail enumerateDevices() sebelum izin
-                            // diberikan (daftar device kosong/label kosong) — kalau gagal total,
-                            // tetap lanjut coba getUserMedia langsung sebagai penentu akhir.
+                            stream = null;
                         }
-                        return { ok: true };
-                    },
+                    }
 
-                    async start() {
-                        this.loading = true;
-                        this.failed = false;
-                        this.failReason = '';
-                        this.failDetail = '';
-                        this.hasTorch = false;
-                        this.torchOn = false;
-                        this._frameArrived = false;
-                        if (this._watchdogId) { clearTimeout(this._watchdogId); this._watchdogId = null; }
-
+                    if (!stream) {
                         try {
-                            if (typeof jsQR === 'undefined') {
-                                console.error('[KipayScanner] jsQR tidak termuat (kemungkinan CDN diblokir jaringan).');
-                                this.loading = false;
-                                this.failed = true;
-                                this.failReason = 'other';
-                                this.failDetail = 'jsQR belum termuat';
-                                return;
-                            }
-
-                            const check = await this.checkAvailability();
-                            if (!check.ok) {
-                                console.warn('[KipayScanner] kamera tidak tersedia:', check.reason);
-                                this.loading = false;
-                                this.failed = true;
-                                this.failReason = check.reason;
-                                return;
-                            }
-
-                            await this.openCamera();
-                            this.loading = false;
-                            this.checkTorchSupport();
-                            this.armFrameWatchdog();
-                            this.loopScan();
-                        } catch (err) {
-                            console.error('[KipayScanner] gagal membuka kamera:', err);
-                            this.loading = false;
-                            this.failed = true;
-                            this.failDetail = err && err.name ? err.name : String(err);
-                            if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
-                                this.failReason = 'denied';
-                            } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) {
-                                this.failReason = 'no-device';
-                            } else {
-                                this.failReason = 'other';
-                            }
-                        }
-                    },
-
-                    // Jaga-jaga untuk kasus getUserMedia() SUKSES (tidak error) tapi video tidak
-                    // pernah benar-benar mengirim frame (layar hitam terus) — mis. kamera sedang
-                    // dipakai aplikasi lain, atau driver bermasalah. Tanpa ini, UI akan diam di
-                    // "kamera siap" selamanya walau sebenarnya tidak ada gambar sama sekali.
-                    armFrameWatchdog() {
-                        this._watchdogId = setTimeout(() => {
-                            if (!this._frameArrived && this.stream) {
-                                console.warn('[KipayScanner] tidak ada frame video setelah 4 detik — kemungkinan feed hitam.');
-                                this.stopCamera();
-                                this.failed = true;
-                                this.failReason = 'black-feed';
-                            }
-                        }, 4000);
-                    },
-
-                    async openCamera() {
-                        // 1) Pakai stream hasil "prewarm" dari onclick tombol (lihat window.kipayPrewarmCamera)
-                        //    kalau ada — ini yang membuat kamera tetap dianggap diminta dalam gesture pengguna.
-                        if (window.kipayPendingStream) {
-                            const pending = window.kipayPendingStream;
-                            window.kipayPendingStream = null;
-                            try {
-                                this.stream = await pending;
-                            } catch (e) {
-                                this.stream = null;
-                            }
-                        }
-
-                        // 2) Kalau belum ada (mis. dibuka lewat "Coba Lagi", atau prewarm gagal),
-                        //    baru minta izin di sini sebagai fallback.
-                        if (!this.stream) {
-                            try {
-                                this.stream = await navigator.mediaDevices.getUserMedia({
-                                    video: { facingMode: { exact: 'environment' } },
-                                    audio: false,
-                                });
-                            } catch (e1) {
-                                this.stream = await navigator.mediaDevices.getUserMedia({
-                                    video: true,
-                                    audio: false,
-                                });
-                            }
-                        }
-
-                        const video = this.$refs.video;
-                        video.srcObject = this.stream;
-                        await video.play();
-                    },
-
-                    loopScan() {
-                        const video = this.$refs.video;
-                        const canvas = this.$refs.canvas;
-                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-                        const tick = () => {
-                            if (!this.stream) return; // kamera sudah ditutup, hentikan loop
-                            if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-                                this._frameArrived = true; // penanda untuk armFrameWatchdog()
-                                canvas.width = video.videoWidth;
-                                canvas.height = video.videoHeight;
-                                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                                const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                                    inversionAttempts: 'dontInvert',
-                                });
-                                if (code && code.data) {
-                                    this.stopCamera();
-                                    @this.call('scan', code.data);
-                                    return;
-                                }
-                            }
-                            this.rafId = requestAnimationFrame(tick);
-                        };
-                        this.rafId = requestAnimationFrame(tick);
-                    },
-
-                    stop() {
-                        this.stopCamera();
-                    },
-
-                    stopCamera() {
-                        if (this._watchdogId) { clearTimeout(this._watchdogId); this._watchdogId = null; }
-                        if (this.rafId) cancelAnimationFrame(this.rafId);
-                        this.rafId = null;
-                        if (this.stream) {
-                            this.stream.getTracks().forEach((t) => t.stop());
-                            this.stream = null;
-                        }
-                        this.hasTorch = false;
-                        this.torchOn = false;
-                        this._track = null;
-                    },
-
-                    checkTorchSupport() {
-                        try {
-                            this._track = this.stream.getVideoTracks()[0];
-                            const caps = this._track.getCapabilities ? this._track.getCapabilities() : null;
-                            this.hasTorch = !!(caps && caps.torch);
-                        } catch (e) {
-                            this.hasTorch = false;
-                        }
-                    },
-
-                    toggleTorch() {
-                        if (!this._track) return;
-                        this.torchOn = !this.torchOn;
-                        this._track.applyConstraints({ advanced: [{ torch: this.torchOn }] }).catch(() => {
-                            this.torchOn = !this.torchOn;
-                        });
-                    },
-
-                    // Fallback: scan dari gambar galeri (mis. kamera tidak tersedia/diizinkan).
-                    async scanFromFile(file) {
-                        if (!file) return;
-                        this.loading = true;
-                        this.failed = false;
-                        try {
-                            this.stopCamera();
-
-                            const img = await new Promise((resolve, reject) => {
-                                const el = new Image();
-                                el.onload = () => resolve(el);
-                                el.onerror = reject;
-                                el.src = URL.createObjectURL(file);
+                            stream = await navigator.mediaDevices.getUserMedia({
+                                video: { facingMode: { exact: 'environment' } },
+                                audio: false,
                             });
+                        } catch (e1) {
+                            stream = await navigator.mediaDevices.getUserMedia({
+                                video: true,
+                                audio: false,
+                            });
+                        }
+                    }
 
-                            const canvas = this.$refs.canvas;
-                            canvas.width = img.naturalWidth;
-                            canvas.height = img.naturalHeight;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(img, 0, 0);
+                    const video = el('kipay-video');
+                    if (!video) throw new Error('Elemen video tidak ditemukan');
+                    video.srcObject = stream;
+                    await video.play();
+                }
+
+                function armWatchdog() {
+                    if (watchdogId) clearTimeout(watchdogId);
+                    watchdogId = setTimeout(() => {
+                        if (!frameArrived && stream) {
+                            console.warn('[KipayScanner] tidak ada frame video setelah 4 detik — kemungkinan feed hitam.');
+                            stopCamera();
+                            setFailed(true, 'black-feed');
+                        }
+                    }, 4000);
+                }
+
+                function checkTorchSupport() {
+                    const btn = el('kipay-torch-btn');
+                    try {
+                        track = stream.getVideoTracks()[0];
+                        const caps = track.getCapabilities ? track.getCapabilities() : null;
+                        const has = !!(caps && caps.torch);
+                        if (btn) btn.style.display = has ? 'flex' : 'none';
+                    } catch (e) {
+                        if (btn) btn.style.display = 'none';
+                    }
+                }
+
+                function loopScan() {
+                    const video = el('kipay-video');
+                    const canvas = el('kipay-canvas');
+                    if (!video || !canvas) return;
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+                    function tick() {
+                        if (!stream) return; // kamera sudah ditutup, hentikan loop
+                        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+                            frameArrived = true;
+                            canvas.width = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                            const code = jsQR(imageData.data, imageData.width, imageData.height);
-
-                            this.loading = false;
-                            @this.call('scan', code && code.data ? code.data : '');
-                        } catch (e) {
-                            console.error(e);
-                            this.loading = false;
-                            @this.call('scan', '');
+                            const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                                inversionAttempts: 'dontInvert',
+                            });
+                            if (code && code.data) {
+                                stopCamera();
+                                @this.call('scan', code.data);
+                                return;
+                            }
                         }
-                    },
+                        rafId = requestAnimationFrame(tick);
+                    }
+                    rafId = requestAnimationFrame(tick);
+                }
+
+                function stopCamera() {
+                    if (watchdogId) { clearTimeout(watchdogId); watchdogId = null; }
+                    if (rafId) cancelAnimationFrame(rafId);
+                    rafId = null;
+                    if (stream) {
+                        stream.getTracks().forEach((t) => t.stop());
+                        stream = null;
+                    }
+                    track = null;
+                    const torchBtn = el('kipay-torch-btn');
+                    if (torchBtn) torchBtn.style.display = 'none';
+                }
+
+                async function start() {
+                    setLoading(true);
+                    setFailed(false);
+                    frameArrived = false;
+
+                    try {
+                        if (typeof jsQR === 'undefined') {
+                            console.error('[KipayScanner] jsQR tidak termuat (kemungkinan CDN diblokir jaringan).');
+                            setLoading(false);
+                            setFailed(true, 'other', 'jsQR belum termuat');
+                            return;
+                        }
+
+                        const check = await checkAvailability();
+                        if (!check.ok) {
+                            console.warn('[KipayScanner] kamera tidak tersedia:', check.reason);
+                            setLoading(false);
+                            setFailed(true, check.reason);
+                            return;
+                        }
+
+                        await openCamera();
+                        setLoading(false);
+                        checkTorchSupport();
+                        armWatchdog();
+                        loopScan();
+                    } catch (err) {
+                        console.error('[KipayScanner] gagal membuka kamera:', err);
+                        setLoading(false);
+                        let reason = 'other';
+                        if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+                            reason = 'denied';
+                        } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) {
+                            reason = 'no-device';
+                        }
+                        setFailed(true, reason, err && err.name ? err.name : String(err));
+                    }
+                }
+
+                function stop() {
+                    stopCamera();
+                }
+
+                function retry() {
+                    if (window.kipayPrewarmCamera) window.kipayPrewarmCamera();
+                    start();
+                }
+
+                function toggleTorch() {
+                    if (!track) return;
+                    const btn = el('kipay-torch-btn');
+                    const isOn = btn && btn.classList.contains('kipay-torch-on');
+                    track.applyConstraints({ advanced: [{ torch: !isOn }] }).then(() => {
+                        if (btn) {
+                            btn.classList.toggle('kipay-torch-on', !isOn);
+                            btn.classList.toggle('bg-emerald-400/80', !isOn);
+                            btn.classList.toggle('bg-white/15', isOn);
+                        }
+                    }).catch(() => {});
+                }
+
+                // Fallback: scan dari gambar galeri (mis. kamera tidak tersedia/diizinkan).
+                async function scanFromFile(file) {
+                    if (!file) return;
+                    setLoading(true);
+                    setFailed(false);
+                    try {
+                        stopCamera();
+
+                        const img = await new Promise((resolve, reject) => {
+                            const image = new Image();
+                            image.onload = () => resolve(image);
+                            image.onerror = reject;
+                            image.src = URL.createObjectURL(file);
+                        });
+
+                        const canvas = el('kipay-canvas');
+                        canvas.width = img.naturalWidth;
+                        canvas.height = img.naturalHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0);
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+
+                        setLoading(false);
+                        @this.call('scan', code && code.data ? code.data : '');
+                    } catch (e) {
+                        console.error('[KipayScanner] gagal membaca gambar:', e);
+                        setLoading(false);
+                        @this.call('scan', '');
+                    }
+                }
+
+                // ========================================================================
+                // TESTER: INPUT PAYLOAD MANUAL
+                // Dipakai dari blok HTML "TESTER START/END" di dashboard.blade.php. Hapus
+                // dua fungsi ini bersamaan dengan blok HTML tester begitu scan kamera sudah
+                // dikonfirmasi jalan di semua perangkat target.
+                // ========================================================================
+                function toggleTester() {
+                    const panel = el('kipay-tester-panel');
+                    if (!panel) return;
+                    panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex';
+                }
+
+                function submitTesterPayload(inputId) {
+                    const input = el(inputId);
+                    if (!input) return;
+                    const value = (input.value || '').trim();
+                    if (!value) return;
+                    stopCamera();
+                    @this.call('scan', value);
+                }
+                // ==================== END TESTER ====================
+
+                return {
+                    start: start,
+                    stop: stop,
+                    retry: retry,
+                    toggleTorch: toggleTorch,
+                    scanFromFile: scanFromFile,
+                    toggleTester: toggleTester,
+                    submitTesterPayload: submitTesterPayload,
                 };
-            };
+            })();
 
-            /* =====================================================================
-             | KODE LAMA (html5-qrcode) — DIKOMENTARI, BUKAN DIHAPUS.
-             | Simpan untuk rollback jika suatu saat berpindah kembali ke pendekatan ini.
-             | Catatan: cara ini bergantung pada library eksternal html5-qrcode yang
-             | menjalankan worker sendiri untuk decoding, berbeda dari jsQR di atas
-             | yang murni JS dan lebih ringan untuk deploy statis seperti Vercel.
-             |=====================================================================
+            /* ---------- LIFECYCLE: mulai/hentikan kamera saat #kipay-scan-root muncul/hilang ---------- */
+            (function () {
+                function containsRoot(node) {
+                    if (!node || node.nodeType !== 1) return false;
+                    if (node.id === 'kipay-scan-root') return true;
+                    return typeof node.querySelector === 'function' && !!node.querySelector('#kipay-scan-root');
+                }
 
-            <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"><' + '/script>
-            <script>
-                document.addEventListener('alpine:init', () => {
-                    Alpine.data('kipayScannerOld', () => ({
-                        instance: null,
-                        failed: false,
-                        loading: true,
-
-                        start(withDelay = true) {
-                            this.loading = true;
-                            this.failed = false;
-
-                            const executeCamera = () => {
-                                if (typeof Html5Qrcode === 'undefined') {
-                                    this.loading = false; this.failed = true; return;
-                                }
-                                const el = document.getElementById('kipay-reader');
-                                if (!el) { this.loading = false; this.failed = true; return; }
-
-                                this.instance = new Html5Qrcode('kipay-reader');
-                                this.instance.start(
-                                    { facingMode: 'environment' },
-                                    { fps: 10, qrbox: { width: 230, height: 230 } },
-                                    (text) => {
-                                        this.stop();
-                                        @this.call('scan', text);
-                                    },
-                                    () => {}
-                                ).then(() => {
-                                    this.loading = false;
-                                }).catch((err) => {
-                                    console.error(err);
-                                    this.loading = false;
-                                    this.failed = true;
-                                });
-                            };
-
-                            if (withDelay) {
-                                setTimeout(executeCamera, 400);
-                            } else {
-                                executeCamera();
-                            }
-                        },
-                        stop() {
-                            if (this.instance) {
-                                this.instance.stop().then(() => this.instance.clear()).catch(() => {});
-                                this.instance = null;
-                            }
-                        }
-                    }));
+                const observer = new MutationObserver(function (mutations) {
+                    for (const mutation of mutations) {
+                        mutation.addedNodes.forEach(function (node) {
+                            if (containsRoot(node)) window.KipayScanner.start();
+                        });
+                        mutation.removedNodes.forEach(function (node) {
+                            if (containsRoot(node)) window.KipayScanner.stop();
+                        });
+                    }
                 });
-            <' + '/script>
-            ===================================================================== */
+
+                function boot() {
+                    observer.observe(document.body, { childList: true, subtree: true });
+                    // Kalau sheet scan kebetulan sudah ada di DOM saat script ini pertama
+                    // kali jalan (mis. setelah full page reload dengan $showScan true dari
+                    // server), langsung mulai juga di sini.
+                    if (document.getElementById('kipay-scan-root')) {
+                        window.KipayScanner.start();
+                    }
+                }
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', boot);
+                } else {
+                    boot();
+                }
+            })();
         </script>
     @endpush
 </div>
