@@ -1,5 +1,5 @@
 <div
-    x-data="qrisScanner()"
+    x-data="window.qrisScanner()"
     x-init="init()"
     x-on:livewire:navigated.window="init()"
     class="min-h-screen bg-slate-100 px-4 py-8 text-slate-900"
@@ -57,7 +57,7 @@
 
     @script
         <script>
-            function qrisScanner() {
+            window.qrisScanner = function qrisScanner() {
                 return {
                     active: false,
                     status: @js($this->status ?? 'Siap memindai QRIS'),
