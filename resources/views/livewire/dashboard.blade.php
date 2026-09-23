@@ -242,7 +242,7 @@
                     <div class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/70"></div>
 
                     {{-- top bar --}}
-                    <div class="absolute inset-x-0 top-0 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+                    <div class="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
                         <button wire:click="closeAll" class="flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur">
                             <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                         </button>
@@ -254,7 +254,7 @@
                     </div>
 
                     {{-- kotak pemindai dengan efek scan digital (garis bergerak) --}}
-                    <div class="pointer-events-none absolute left-1/2 top-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2">
+                    <div class="pointer-events-none absolute left-1/2 top-1/2 z-10 h-64 w-64 -translate-x-1/2 -translate-y-1/2">
                         <div class="absolute inset-0 rounded-2xl border border-white/40"></div>
                         <div class="absolute -left-0.5 -top-0.5 h-9 w-9 rounded-tl-2xl border-l-4 border-t-4 border-emerald-400"></div>
                         <div class="absolute -right-0.5 -top-0.5 h-9 w-9 rounded-tr-2xl border-r-4 border-t-4 border-emerald-400"></div>
@@ -263,9 +263,14 @@
                         <div class="kipay-scanline absolute inset-x-2 h-1 rounded-full bg-gradient-to-r from-transparent via-emerald-300 to-transparent" style="box-shadow:0 0 12px 2px rgba(52,211,153,0.85)"></div>
                     </div>
 
-                    <p class="absolute inset-x-0 top-[calc(50%+9rem)] text-center text-xs text-white/80">Arahkan kamera ke kode QR pembayaran</p>
+                    <p class="pointer-events-none absolute inset-x-0 top-[calc(50%+9rem)] z-10 text-center text-xs text-white/80">Arahkan kamera ke kode QR pembayaran</p>
 
-                    <div id="kipay-loading" class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 text-white">
+                    {{--
+                        FIX: layer loading diberi z-10 dan pointer-events-none agar TIDAK PERNAH
+                        memblokir klik ke elemen di bawah/atasnya (mis. tombol tester di bottom
+                        sheet), baik saat masih tampil maupun kalau macet karena kamera hang.
+                    --}}
+                    <div id="kipay-loading" class="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/40 text-white">
                         <svg class="h-7 w-7 animate-spin" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
@@ -273,8 +278,8 @@
                         <p class="text-xs">Membuka kamera...</p>
                     </div>
 
-                    {{-- Panel gagal — pesan mengikuti alasan spesifik (izin ditolak / tidak ada kamera / http / tidak didukung / feed hitam) --}}
-                    <div id="kipay-failed" style="display:none" class="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
+                    {{-- Panel gagal — pesan mengikuti alasan spesifik (izin ditolak / tidak ada kamera / http / tidak didukung / feed hitam / timeout) --}}
+                    <div id="kipay-failed" style="display:none" class="absolute inset-x-6 top-1/2 z-20 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
                         <p id="kipay-fail-message" class="mb-1 text-sm text-slate-600"></p>
                         <p id="kipay-fail-detail" style="display:none" class="mb-4 text-[10px] text-slate-300"></p>
                         <div class="flex flex-col gap-2">
@@ -305,7 +310,7 @@
                     </div>
 
                     {{-- bottom sheet: Upload QR + toggle mode tester --}}
-                    <div class="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] pt-4 shadow-2xl">
+                    <div class="absolute inset-x-0 bottom-0 z-20 rounded-t-3xl bg-white px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] pt-4 shadow-2xl">
                         <div class="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200"></div>
 
                         <div class="mb-4 rounded-2xl bg-gradient-to-r from-blue-600 to-emerald-500 px-4 py-3 text-center text-xs font-semibold text-white">
@@ -505,6 +510,24 @@
              | mengawasi kapan elemen #kipay-scan-root muncul/hilang dari DOM —
              | ini juga tidak bergantung pada Alpine maupun hook Livewire tertentu,
              | jadi aman terhadap versi Livewire apa pun.
+             |
+             | ==== PERBAIKAN (fix stuck "Membuka kamera..." + tombol tester tidak
+             |      bisa dipencet) ====
+             | 1. openCamera() sekarang di-"race" dengan hard timeout 8 detik lewat
+             |    Promise.race(). Sebelumnya, kalau getUserMedia()/video.play() tidak
+             |    pernah resolve maupun reject (macet total — ini terjadi di sejumlah
+             |    webview/embedded browser yang diam-diam memblokir kamera tanpa
+             |    memunculkan prompt izin maupun error), maka `await openCamera()`
+             |    menggantung selamanya, `setLoading(false)` tidak pernah tercapai,
+             |    dan spinner "Membuka kamera..." tampil selamanya.
+             | 2. Layer #kipay-loading diberi class `pointer-events-none` + `z-10`
+             |    (lihat file blade), sementara panel gagal (#kipay-failed) dan
+             |    bottom sheet (tempat tombol tester berada) diberi `z-20`. Dengan
+             |    begitu, layer loading tidak pernah lagi menghalangi klik ke tombol
+             |    manapun di bawah/di atasnya — termasuk tombol "Mode tester" — baik
+             |    saat masih loading maupun kalau macet.
+             | 3. Kalau timeout tercapai, stopCamera() otomatis dipanggil supaya
+             |    stream yang mungkin setengah terbuka tidak menggantung di memori.
              |=====================================================================*/
 
             /* ---------- PREWARM KAMERA (dipanggil dari onclick tombol "Scan QRIS") ---------- */
@@ -533,6 +556,9 @@
                 let frameArrived = false;
                 let track = null;
 
+                // Batas waktu maksimal menunggu kamera terbuka sebelum dianggap gagal (ms).
+                const CAMERA_OPEN_TIMEOUT_MS = 8000;
+
                 function el(id) {
                     return document.getElementById(id);
                 }
@@ -554,6 +580,8 @@
                             return 'Akses kamera ditolak. Izinkan akses kamera lewat pengaturan browser (ikon gembok di address bar), lalu tekan "Coba Lagi".';
                         case 'black-feed':
                             return 'Kamera terbuka tapi tidak mengirim gambar. Kemungkinan sedang dipakai aplikasi/tab lain, atau driver kamera bermasalah. Tutup aplikasi lain yang memakai kamera, lalu coba lagi.';
+                        case 'timeout':
+                            return 'Kamera tidak merespons setelah beberapa detik. Tekan "Coba Lagi", atau gunakan Upload QR / mode tester di bawah.';
                         default:
                             return 'Kamera tidak bisa diakses. Pastikan browser diizinkan mengakses kamera, lalu coba lagi. Atau unggah gambar QR dari galeri.';
                     }
@@ -633,6 +661,38 @@
                     if (!video) throw new Error('Elemen video tidak ditemukan');
                     video.srcObject = stream;
                     await video.play();
+                }
+
+                // Bungkus openCamera() dengan timeout keras. Kalau openCamera() tidak selesai
+                // (resolve atau reject) dalam CAMERA_OPEN_TIMEOUT_MS, promise ini akan reject
+                // dengan alasan 'timeout' sehingga UI tidak pernah menggantung selamanya.
+                function openCameraWithTimeout() {
+                    return new Promise((resolve, reject) => {
+                        let settled = false;
+
+                        const timer = setTimeout(() => {
+                            if (settled) return;
+                            settled = true;
+                            const err = new Error('Timeout membuka kamera');
+                            err.name = 'TimeoutError';
+                            reject(err);
+                        }, CAMERA_OPEN_TIMEOUT_MS);
+
+                        openCamera().then(
+                            () => {
+                                if (settled) return;
+                                settled = true;
+                                clearTimeout(timer);
+                                resolve();
+                            },
+                            (err) => {
+                                if (settled) return;
+                                settled = true;
+                                clearTimeout(timer);
+                                reject(err);
+                            }
+                        );
+                    });
                 }
 
                 function armWatchdog() {
@@ -720,7 +780,10 @@
                             return;
                         }
 
-                        await openCamera();
+                        // FIX: pakai versi dengan timeout, bukan openCamera() langsung, supaya
+                        // tidak pernah menggantung tanpa batas waktu.
+                        await openCameraWithTimeout();
+
                         setLoading(false);
                         checkTorchSupport();
                         armWatchdog();
@@ -728,13 +791,21 @@
                     } catch (err) {
                         console.error('[KipayScanner] gagal membuka kamera:', err);
                         setLoading(false);
+
                         let reason = 'other';
-                        if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+                        if (err && err.name === 'TimeoutError') {
+                            reason = 'timeout';
+                        } else if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
                             reason = 'denied';
                         } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) {
                             reason = 'no-device';
                         }
+
                         setFailed(true, reason, err && err.name ? err.name : String(err));
+
+                        // Pastikan stream setengah-terbuka (kalau ada) ditutup supaya tidak
+                        // membocorkan resource kamera setelah timeout/gagal.
+                        stopCamera();
                     }
                 }
 
