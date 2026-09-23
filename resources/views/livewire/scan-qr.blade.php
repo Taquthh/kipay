@@ -152,22 +152,21 @@
 
                     <div>
                         <label class="text-xs font-semibold text-slate-400">PIN Transaksi</label>
-                        <div
-                            x-data="window.kipayPinPad()"
-                            x-init="$watch('pin', v => $wire.set('pin', v))"
-                            class="mt-2 flex justify-center gap-2.5"
-                        >
-                            <template x-for="(d, i) in digits" :key="i">
-                                <input
-                                    type="tel" inputmode="numeric" maxlength="1" autocomplete="off"
-                                    style="-webkit-text-security: disc; text-security: disc;"
-                                    :value="digits[i]"
-                                    x-on:input="onInput(i, $event)"
-                                    x-on:keydown.backspace="onBackspace(i, $event)"
-                                    class="h-14 w-11 rounded-2xl border-2 bg-slate-50/60 text-center text-2xl font-bold text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-emerald-50/40 focus:shadow-[0_0_0_4px_rgba(16,185,129,0.12)]"
-                                    :class="digits[i] ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-100'"
-                                >
-                            </template>
+                        <div x-data="window.kipayPinPad()">
+                            <div class="mt-2 flex justify-center gap-2.5">
+                                <template x-for="(d, i) in digits" :key="i">
+                                    <input
+                                        type="tel" inputmode="numeric" maxlength="1" autocomplete="off"
+                                        style="-webkit-text-security: disc; text-security: disc;"
+                                        :value="digits[i]"
+                                        x-on:input="onInput(i, $event)"
+                                        x-on:keydown.backspace="onBackspace(i, $event)"
+                                        class="h-14 w-11 rounded-2xl border-2 bg-slate-50/60 text-center text-2xl font-bold text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-emerald-50/40 focus:shadow-[0_0_0_4px_rgba(16,185,129,0.12)]"
+                                        :class="digits[i] ? 'border-emerald-300 bg-emerald-50/50' : 'border-slate-100'"
+                                    >
+                                </template>
+                            </div>
+                            <input type="hidden" wire:model="pin" x-ref="pinField">
                         </div>
                         @error('pin') <p class="mt-2 text-center text-xs font-medium text-red-500">{{ $message }}</p> @enderror
                     </div>
@@ -245,24 +244,31 @@
         <script>
             window.kipayPinPad = function kipayPinPad() {
                 return {
-                    digits: ['', '', '', '', '', ''],
-                    get pin() { return this.digits.join(''); },
+                    digits: Array(6).fill(''),
+                    syncHidden() {
+                        const field = this.$refs.pinField;
+                        if (!field) return;
+                        field.value = this.digits.join('');
+                        field.dispatchEvent(new Event('input', { bubbles: true }));
+                    },
                     onInput(index, event) {
                         const value = event.target.value.replace(/\D/g, '').slice(-1);
                         this.digits[index] = value;
                         event.target.value = value;
+                        this.syncHidden();
                         if (value) {
                             const next = event.target.nextElementSibling;
-                            if (next) next.focus();
+                            if (next && next.tagName === 'INPUT') next.focus();
                         }
                     },
                     onBackspace(index, event) {
                         if (this.digits[index]) return;
                         const prev = event.target.previousElementSibling;
-                        if (prev) {
+                        if (prev && prev.tagName === 'INPUT') {
                             this.digits[index - 1] = '';
                             prev.focus();
                         }
+                        this.syncHidden();
                     }
                 };
             };

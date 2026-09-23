@@ -13,7 +13,7 @@ Route::get('/transfer', Transfer::class)->middleware('auth')->name('transfer');
 Route::get('/merchant', MerchantProfile::class)->middleware('auth')->name('merchant');
 
 // Rute Login & Register menggunakan Livewire Component
-Route::get('/', LoginRegister::class)->name('login');
+Route::get('/Login', LoginRegister::class)->name('login');
 
 // Rute sementara untuk Dashboard agar tidak error setelah login
-Route::get('/dashboard', Dashboard::class)->middleware('auth')->name('dashboard');
+Route::get('/', Dashboard::class)->middleware('auth')->name('dashboard');

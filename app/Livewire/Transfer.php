@@ -19,12 +19,21 @@ class Transfer extends Component
 
     public $targetUser;
     public $errorMessage = '';
+    public ?string $lastRef = null;
 
     public function checkUser()
     {
-        $this->validate(['whatsapp' => 'required|numeric']);
+        $this->validate(['whatsapp' => 'required']);
 
-        $this->targetUser = User::where('whatsapp', $this->whatsapp)->first();
+        $normalized = $this->normalizeWhatsapp($this->whatsapp);
+
+        if (! $normalized) {
+            $this->errorMessage = 'Format nomor WhatsApp tidak valid.';
+            return;
+        }
+
+        $this->whatsapp = $normalized;
+        $this->targetUser = User::where('whatsapp', $normalized)->first();
 
         if ($this->targetUser) {
             if ($this->targetUser->id == Auth::id()) {
@@ -38,6 +47,32 @@ class Transfer extends Component
         }
     }
 
+    /**
+     * Menormalkan nomor ke format 62xxxxxxxxxx, apa pun cara pengguna mengetiknya
+     * (diawali 0, 62, +62, atau langsung tanpa kode negara).
+     */
+    private function normalizeWhatsapp(string $value): ?string
+    {
+        $digits = preg_replace('/\D/', '', $value);
+
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '620')) {
+            // Salah ketik "62" + "0..." -> buang nol tambahan setelah kode negara
+            $digits = '62' . substr($digits, 3);
+        } elseif (str_starts_with($digits, '62')) {
+            // sudah dalam format 62xxxx
+        } elseif (str_starts_with($digits, '0')) {
+            $digits = '62' . substr($digits, 1);
+        } else {
+            $digits = '62' . $digits;
+        }
+
+        return (strlen($digits) >= 10 && strlen($digits) <= 15) ? $digits : null;
+    }
+
     public function processTransfer()
     {
         $this->validate([
@@ -47,13 +82,17 @@ class Transfer extends Component
 
         $user = Auth::user();
 
-        if (!Hash::check($this->pin, $user->pin)) {
+        if (! $user->pin || ! Hash::check($this->pin, $user->pin)) {
             $this->errorMessage = 'PIN salah!';
+            $this->reset('pin');
             return;
         }
 
+        $this->errorMessage = '';
+        $refBase = 'TRF-' . now()->format('ymdHis') . '-' . $user->id . '-' . random_int(100, 999);
+
         try {
-            DB::transaction(function () use ($user) {
+            DB::transaction(function () use ($user, $refBase) {
                 // LOCKING: Kunci dompet pengirim dan penerima
                 $senderWallet = Wallet::where('user_id', $user->id)->lockForUpdate()->first();
                 $receiverWallet = Wallet::where('user_id', $this->targetUser->id)->lockForUpdate()->first();
@@ -71,22 +110,22 @@ class Transfer extends Component
 
                 // Rekam Transaksi Pengirim (Keluar)
                 Transaction::create([
-                    'reference_id' => 'TRF-OUT-' . time(),
+                    'reference_id' => $refBase . '-OUT',
                     'user_id' => $user->id,
                     'type' => 'transfer',
                     'amount' => $this->amount,
-                    'description' => 'Transfer ke: ' . $this->targetUser->name . ' (' . $this->targetUser->whatsapp . ')', // <--- TAMBAHKAN INI
+                    'description' => 'Transfer ke: ' . $this->targetUser->name . ' (' . $this->targetUser->whatsapp . ')',
                     'latest_balance' => $senderWallet->balance,
                     'status' => 'success',
                 ]);
 
                 // Rekam Transaksi Penerima (Masuk)
                 Transaction::create([
-                    'reference_id' => 'TRF-IN-' . time(),
+                    'reference_id' => $refBase . '-IN',
                     'user_id' => $this->targetUser->id,
                     'type' => 'receive',
                     'amount' => $this->amount,
-                    'description' => 'Transfer dari: ' . $user->name . ' (' . $user->whatsapp . ')', // <--- TAMBAHKAN INI
+                    'description' => 'Transfer dari: ' . $user->name . ' (' . $user->whatsapp . ')',
                     'latest_balance' => $receiverWallet->balance,
                     'status' => 'success',
                 ]);
@@ -99,6 +138,8 @@ class Transfer extends Component
             \App\Jobs\SendWaNotification::dispatch($user->whatsapp, $pesanPengirim);
             \App\Jobs\SendWaNotification::dispatch($this->targetUser->whatsapp, $pesanPenerima);
 
+            $this->lastRef = $refBase;
+            $this->reset('pin');
             $this->step = 3;
         } catch (\Exception $e) {
             $this->errorMessage = $e->getMessage();
