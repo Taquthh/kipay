@@ -14,7 +14,7 @@
                 </svg>
             </div>
             <h1 class="text-3xl font-extrabold tracking-tight">Kipay</h1>
-            <p class="mt-1 text-sm text-blue-50/90">Dompet Digital Masa Depan</p>
+            <p class="mt-1 text-sm text-blue-50/90">Tinggal Kipay, Transaksi Selesai!</p>
         </header>
 
         {{-- Kartu utama: bottom-sheet penuh di mobile, kartu di tengah pada layar lebar --}}

@@ -274,17 +274,38 @@
                         <p class="text-xs">Membuka kamera...</p>
                     </div>
 
+                    {{-- Panel gagal — pesan sekarang mengikuti alasan spesifik (izin ditolak / tidak ada kamera / http / tidak didukung) --}}
                     <div x-show="failed" x-cloak class="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
-                        <p class="mb-4 text-sm text-slate-600">Kamera tidak bisa diakses. Pastikan browser diizinkan mengakses kamera, lalu coba lagi. Atau unggah gambar QR dari galeri.</p>
+                        <p class="mb-4 text-sm text-slate-600" x-text="failMessage()"></p>
                         <div class="flex flex-col gap-2">
-                            <button type="button" x-on:click="window.kipayPrewarmCamera(); failed = false; start()"
+                            <button type="button" x-show="failReason !== 'insecure' && failReason !== 'unsupported'" x-cloak
+                                x-on:click="window.kipayPrewarmCamera(); start()"
                                 class="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white">Coba Lagi</button>
                             <button type="button" x-on:click="$refs.fileInput.click()"
                                 class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Upload QR</button>
                         </div>
+
+                        {{-- ============================================================================
+                             TESTER: INPUT PAYLOAD MANUAL
+                             Dipakai saat perangkat/browser tester tidak punya kamera (mis. laptop tanpa
+                             webcam) atau saat butuh menguji payload tertentu (mis. "KIPAY-MCH-1-12345")
+                             tanpa harus mencetak QR fisik dulu. HAPUS SELURUH BLOK INI (dari komentar
+                             TESTER START sampai TESTER END) begitu alur scan kamera sudah dikonfirmasi
+                             aman & berjalan di semua perangkat target.
+                             ============================================================================ --}}
+                        {{-- TESTER START --}}
+                        <div class="mt-4 border-t border-slate-100 pt-4 text-left">
+                            <p class="mb-2 text-xs font-semibold text-slate-400">Mode tester — masukkan payload QR manual</p>
+                            <form x-on:submit.prevent="submitTesterPayload()" class="flex gap-2">
+                                <input type="text" x-model="testerPayload" placeholder="KIPAY-MCH-1-169..."
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                                <button type="submit" class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Kirim</button>
+                            </form>
+                        </div>
+                        {{-- TESTER END --}}
                     </div>
 
-                    {{-- bottom sheet: hanya Upload QR (tombol "Tampilkan QRIS" dihapus karena tidak dibutuhkan) --}}
+                    {{-- bottom sheet: Upload QR + toggle mode tester --}}
                     <div class="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] pt-4 shadow-2xl">
                         <div class="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200"></div>
 
@@ -302,6 +323,25 @@
 
                         <input type="file" accept="image/*" x-ref="fileInput" class="hidden"
                             x-on:change="scanFromFile($event.target.files[0]); $event.target.value = ''">
+
+                        {{-- ============================================================================
+                             TESTER: TOGGLE PAYLOAD MANUAL (tersedia juga saat kamera hidup normal, untuk
+                             menguji payload tertentu tanpa scan fisik). HAPUS SELURUH BLOK INI (dari
+                             komentar TESTER START sampai TESTER END) begitu alur kamera sudah dikonfirmasi
+                             aman & berjalan di semua perangkat target.
+                             ============================================================================ --}}
+                        {{-- TESTER START --}}
+                        <div class="mt-3" x-data="{ open: false }">
+                            <button type="button" x-on:click="open = !open" class="w-full text-center text-[11px] font-semibold text-slate-400 underline decoration-dotted">
+                                Mode tester: masukkan payload manual
+                            </button>
+                            <div x-show="open" x-cloak class="mt-2 flex gap-2">
+                                <input type="text" x-model="testerPayload" placeholder="KIPAY-MCH-1-169..."
+                                    class="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                                <button type="button" x-on:click="submitTesterPayload()" class="shrink-0 rounded-xl bg-slate-800 px-3 py-2 text-xs font-semibold text-white">Kirim</button>
+                            </div>
+                        </div>
+                        {{-- TESTER END --}}
                     </div>
                 </div>
             @endif
@@ -463,10 +503,24 @@
              |=====================================================================*/
             window.kipayPendingStream = null;
             window.kipayPrewarmCamera = function () {
+                // Jangan coba prewarm sama sekali kalau lingkungannya jelas tidak mendukung —
+                // hindari melempar exception yang tidak tertangani di tengah handler onclick.
+                if (!window.isSecureContext) return;
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+
                 window.kipayPendingStream = navigator.mediaDevices
                     .getUserMedia({ video: { facingMode: { exact: 'environment' } }, audio: false })
-                    .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
+                    .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }))
+                    .catch((err) => {
+                        // Biarkan Alpine yang menampilkan pesan error yang tepat saat sheet dibuka;
+                        // di sini cukup pastikan promise "pending" tidak menggantung dengan rejection.
+                        window.kipayPendingStream = null;
+                        throw err;
+                    });
+
+                // Serap rejection supaya tidak muncul "Uncaught (in promise)" di console kalau
+                // sheet scan belum tentu jadi dibuka setelah prewarm ini.
+                window.kipayPendingStream.catch(() => {});
             };
 
             document.addEventListener('alpine:init', () => {
@@ -474,20 +528,87 @@
                     stream: null,
                     rafId: null,
                     failed: false,
+                    failReason: '', // 'insecure' | 'unsupported' | 'no-device' | 'denied' | 'other'
                     loading: true,
                     hasTorch: false,
                     torchOn: false,
                     _track: null,
 
+                    // ========================================================================
+                    // TESTER: INPUT PAYLOAD MANUAL
+                    // Properti & method di bawah ini hanya dipakai oleh blok input tester di HTML.
+                    // Hapus properti ini bersamaan dengan blok HTML "TESTER START/END" begitu
+                    // scan kamera sudah dikonfirmasi jalan di perangkat target.
+                    // ========================================================================
+                    testerPayload: '',
+                    submitTesterPayload() {
+                        const value = this.testerPayload.trim();
+                        if (!value) return;
+                        this.stopCamera();
+                        @this.call('scan', value);
+                    },
+                    // ==================== END TESTER ====================
+
+                    failMessage() {
+                        switch (this.failReason) {
+                            case 'insecure':
+                                return 'Kamera hanya bisa diakses lewat koneksi HTTPS (atau localhost). Buka halaman ini lewat HTTPS, lalu coba lagi — atau gunakan upload/mode tester di bawah.';
+                            case 'unsupported':
+                                return 'Browser ini tidak mendukung akses kamera. Coba gunakan Chrome/Safari versi terbaru, atau unggah gambar QR dari galeri.';
+                            case 'no-device':
+                                return 'Tidak ada kamera yang terdeteksi di perangkat ini. Silakan unggah gambar QR dari galeri, atau gunakan mode tester di bawah.';
+                            case 'denied':
+                                return 'Akses kamera ditolak. Izinkan akses kamera lewat pengaturan browser (ikon gembok di address bar), lalu tekan "Coba Lagi".';
+                            default:
+                                return 'Kamera tidak bisa diakses. Pastikan browser diizinkan mengakses kamera, lalu coba lagi. Atau unggah gambar QR dari galeri.';
+                        }
+                    },
+
+                    // Mengecek ketersediaan kamera SEBELUM benar-benar meminta izin, supaya pesan
+                    // error yang ditampilkan sesuai penyebab sebenarnya (bukan cuma "gagal" generik).
+                    async checkAvailability() {
+                        if (!window.isSecureContext) {
+                            return { ok: false, reason: 'insecure' };
+                        }
+                        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                            return { ok: false, reason: 'unsupported' };
+                        }
+                        try {
+                            const devices = await navigator.mediaDevices.enumerateDevices();
+                            const hasVideoInput = devices.some((d) => d.kind === 'videoinput');
+                            if (!hasVideoInput) {
+                                return { ok: false, reason: 'no-device' };
+                            }
+                        } catch (e) {
+                            // Sebagian browser membatasi detail enumerateDevices() sebelum izin
+                            // diberikan (daftar device kosong/label kosong) — kalau gagal total,
+                            // tetap lanjut coba getUserMedia langsung sebagai penentu akhir.
+                        }
+                        return { ok: true };
+                    },
+
                     async start() {
                         this.loading = true;
                         this.failed = false;
+                        this.failReason = '';
                         this.hasTorch = false;
                         this.torchOn = false;
 
                         if (typeof jsQR === 'undefined') {
-                            this.loading = false; this.failed = true; return;
+                            this.loading = false;
+                            this.failed = true;
+                            this.failReason = 'other';
+                            return;
                         }
+
+                        const check = await this.checkAvailability();
+                        if (!check.ok) {
+                            this.loading = false;
+                            this.failed = true;
+                            this.failReason = check.reason;
+                            return;
+                        }
+
                         try {
                             await this.openCamera();
                             this.loading = false;
@@ -497,6 +618,13 @@
                             console.error(err);
                             this.loading = false;
                             this.failed = true;
+                            if (err && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
+                                this.failReason = 'denied';
+                            } else if (err && (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError')) {
+                                this.failReason = 'no-device';
+                            } else {
+                                this.failReason = 'other';
+                            }
                         }
                     },
 
