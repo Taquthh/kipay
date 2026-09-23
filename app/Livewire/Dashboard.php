@@ -18,9 +18,15 @@ class Dashboard extends Component
 
     /** Panel */
     public bool $showTopUp   = false;
-    public bool $showQr      = false;   // QR personal saya
-    public bool $showScan    = false;   // sheet scan (kamera / manual)
+    // Fitur "Tampilkan QRIS" (QR pribadi) dinonaktifkan — tidak dibutuhkan di web KiPay.
+    // Dibiarkan sebagai komentar (bukan dihapus) agar mudah diaktifkan kembali jika suatu saat diperlukan.
+    // public bool $showQr = false;
+    public bool $showScan    = false;   // sheet scan (kamera / upload)
     public bool $hideBalance = false;
+
+    /** Notifikasi modal (pengganti session flash agar tidak "tertanam" di background) */
+    public bool $showSuccessModal = false;
+    public string $successMessage = '';
 
     /** Top-up */
     public $amount;
@@ -72,20 +78,29 @@ class Dashboard extends Component
 
     public function closeAll(): void
     {
-        $this->showTopUp = $this->showQr = $this->showScan = false;
+        // $showQr dihapus dari sini karena fiturnya dinonaktifkan (lihat komentar properti di atas).
+        $this->showTopUp = $this->showScan = false;
         $this->resetScan();
+    }
+
+    public function closeSuccessModal(): void
+    {
+        $this->showSuccessModal = false;
+        $this->successMessage = '';
     }
 
     /* =====================================================
      | QR personal milik user (untuk menerima transfer teman)
+     | DINONAKTIFKAN — tidak dibutuhkan di web KiPay saat ini.
+     | Simpan sebagai komentar untuk memudahkan rollback.
      |=====================================================*/
-    public function getMyPayloadProperty(): string
-    {
-        return 'KIPAY-USR-' . Auth::id();
-    }
+    // public function getMyPayloadProperty(): string
+    // {
+    //     return 'KIPAY-USR-' . Auth::id();
+    // }
 
     /* =====================================================
-     | STEP 1 — resolve payload (kamera atau input manual)
+     | STEP 1 — resolve payload (kamera JS / upload gambar)
      |=====================================================*/
     public function scan(?string $raw = null): void
     {
@@ -300,9 +315,14 @@ class Dashboard extends Component
             ]);
         });
 
+        $nominal = 'Rp ' . number_format($this->amount, 0, ',', '.');
+
         $this->reset('amount');
         $this->showTopUp = false;
-        session()->flash('success', 'Top-Up berhasil, saldo kamu sudah bertambah.');
+
+        // Notifikasi sukses ditampilkan sebagai modal mengambang, bukan flash tertanam di halaman.
+        $this->successMessage = "Top-Up berhasil, saldo kamu bertambah {$nominal}.";
+        $this->showSuccessModal = true;
     }
 
     public function logout()
