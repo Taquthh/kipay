@@ -1,67 +1,213 @@
-<div class="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-md">
-    <div class="flex justify-between items-center mb-6 border-b pb-4">
-        <h1 class="text-xl font-bold text-gray-800">Bayar via QR</h1>
-        <a href="{{ route('dashboard') }}" class="text-blue-500 hover:underline text-sm">Batal</a>
-    </div>
+<div
+    x-data="qrisScanner()"
+    x-init="init()"
+    x-on:livewire:navigated.window="init()"
+    class="min-h-screen bg-slate-100 px-4 py-8 text-slate-900"
+>
+    <section class="mx-auto max-w-md overflow-hidden rounded-3xl bg-white shadow-xl">
+        <header class="bg-gradient-to-br from-blue-700 via-blue-600 to-emerald-500 p-6 text-white">
+            <p class="text-sm text-white/75">Kipay</p>
+            <h1 class="mt-1 text-2xl font-bold">Scan QRIS</h1>
+            <p class="mt-1 text-sm text-white/80">Pembaca QR aman untuk Android dan iOS</p>
+        </header>
 
-    @if($errorMessage)
-        <div class="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm font-bold">
-            {{ $errorMessage }}
-        </div>
-    @endif
-
-    <!-- STEP 1: Simulasi Scan QR -->
-    @if($step == 1)
-        <div class="text-center">
-            <div class="bg-gray-100 p-8 rounded-lg mb-4 border-2 border-dashed border-gray-300">
-                <p class="text-gray-500 text-sm mb-2">Simulasi Kamera Scanner</p>
-                <p class="text-xs text-gray-400">Masukkan teks Payload Data dari QR Merchant di sini</p>
-            </div>
-
-            <form wire:submit="scan">
-                <input type="text" wire:model="payload" placeholder="Contoh: KIPAY-MCH-1-..." class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4" required>
-                <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-bold">
-                    Proses Scan
-                </button>
-            </form>
-        </div>
-    @endif
-
-    <!-- STEP 2: Input Nominal & PIN -->
-    @if($step == 2)
-        <div>
-            <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6 text-center">
-                <p class="text-sm text-gray-500 mb-1">Membayar ke Merchant:</p>
-                <h2 class="text-2xl font-bold text-blue-700">{{ $merchant->merchant_name }}</h2>
-            </div>
-
-            <form wire:submit="pay">
-                <div class="mb-4">
-                    <label class="block text-gray-700 font-bold mb-2">Nominal Bayar (Rp)</label>
-                    <input type="number" wire:model="amount" placeholder="Min. 1000" class="w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xl font-bold" required>
+        <div class="p-5">
+            <div class="relative aspect-[4/5] overflow-hidden rounded-2xl bg-slate-950">
+                <video x-ref="video" autoplay muted playsinline class="h-full w-full object-cover" aria-label="Kamera pemindai QRIS"></video>
+                <canvas x-ref="canvas" class="hidden"></canvas>
+                <div class="pointer-events-none absolute inset-0 grid place-items-center">
+                    <div class="h-56 w-56 rounded-2xl border-2 border-emerald-400 shadow-[0_0_0_999px_rgb(0_0_0/0.38)]"></div>
                 </div>
-                <div class="mb-6">
-                    <label class="block text-gray-700 font-bold mb-2">PIN Transaksi</label>
-                    <input type="password" wire:model="pin" maxlength="6" class="w-full px-4 py-3 border rounded-lg text-center tracking-widest text-2xl focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                <div x-show="!active" class="absolute inset-0 grid place-items-center p-8 text-center text-white">
+                    <p>Tekan tombol di bawah untuk mengaktifkan kamera</p>
                 </div>
-                <button type="submit" class="w-full bg-green-500 text-white py-3 rounded-lg hover:bg-green-600 font-bold text-lg shadow-lg">
-                    Konfirmasi Pembayaran
-                </button>
-            </form>
-        </div>
-    @endif
-
-    <!-- STEP 3: Sukses -->
-    @if($step == 3)
-        <div class="text-center py-6">
-            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-4">
-                <svg class="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                <p x-show="active && !payload" x-text="status" class="absolute inset-x-4 bottom-4 rounded-xl bg-black/60 p-3 text-center text-xs text-white backdrop-blur"></p>
             </div>
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">Pembayaran Berhasil!</h2>
-            <p class="text-gray-500 mb-6">Dana telah diteruskan ke merchant <strong>{{ $merchant->merchant_name }}</strong>.</p>
-            <a href="{{ route('dashboard') }}" class="inline-block w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-bold">
-                Kembali ke Dashboard
-            </a>
+
+            <p x-text="status" class="mt-3 text-center text-sm text-slate-500"></p>
+
+            <div x-show="error" x-text="error" role="alert" class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700"></div>
+
+            <div x-show="payload" class="mt-4 rounded-xl bg-emerald-50 p-4">
+                <p class="text-xs font-semibold text-emerald-700">Payload QRIS</p>
+                <p x-text="payload" class="mt-1 break-all text-sm text-emerald-950"></p>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 gap-2">
+                <button type="button" x-on:click="startCamera()" class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white">
+                    <span>Buka kamera</span>
+                </button>
+                <label class="cursor-pointer rounded-xl border border-slate-200 px-4 py-3 text-center text-sm font-bold text-slate-700">
+                    Pilih foto
+                    <input type="file" accept="image/*" capture="environment" class="sr-only" x-on:change="readImage($event.target.files[0])">
+                </label>
+            </div>
+
+            <button x-show="hasTorch" type="button" x-on:click="toggleTorch()" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold">
+                <span x-text="torch ? 'Matikan flash' : 'Nyalakan flash'"></span>
+            </button>
+
+            <button x-show="payload" type="button" x-on:click="reset()" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold">
+                Scan lagi
+            </button>
         </div>
-    @endif
+    </section>
+
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" defer></script>
+
+    @script
+        <script>
+            function qrisScanner() {
+                return {
+                    active: false,
+                    status: @js($this->status ?? 'Siap memindai QRIS'),
+                    error: @js($this->error ?? ''),
+                    payload: @js($this->payload ?? ''),
+                    torch: false,
+                    hasTorch: false,
+                    stream: null,
+                    frame: null,
+                    scanning: false,
+                    resultSent: false,
+                    initialized: false,
+
+                    init() {
+                        if (this.initialized) return;
+                        this.initialized = true;
+                        this.$watch('payload', (value) => {
+                            if (value) this.stopCamera();
+                        });
+                    },
+
+                    stopCamera() {
+                        if (this.frame) cancelAnimationFrame(this.frame);
+                        this.frame = null;
+                        this.scanning = false;
+                        this.stream?.getTracks().forEach((track) => track.stop());
+                        this.stream = null;
+                        this.active = false;
+                        this.torch = false;
+                        this.hasTorch = false;
+                        if (this.$refs.video) this.$refs.video.srcObject = null;
+                    },
+
+                    async startCamera() {
+                        this.stopCamera();
+                        this.resultSent = false;
+                        this.payload = '';
+                        this.error = '';
+                        this.status = 'Meminta izin kamera...';
+
+                        if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+                            this.error = 'Kamera hanya dapat digunakan melalui HTTPS.';
+                            this.status = 'Kamera belum tersedia';
+                            return;
+                        }
+                        if (!navigator.mediaDevices?.getUserMedia) {
+                            this.error = 'Browser ini tidak mendukung kamera. Gunakan Safari atau Chrome terbaru.';
+                            this.status = 'Kamera tidak didukung';
+                            return;
+                        }
+
+                        try {
+                            let stream;
+                            try {
+                                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+                            } catch {
+                                stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                            }
+                            this.stream = stream;
+                            const video = this.$refs.video;
+                            video.srcObject = stream;
+                            await new Promise((resolve) => {
+                                if (video.readyState >= HTMLMediaElement.HAVE_METADATA) resolve();
+                                else video.onloadedmetadata = resolve;
+                            });
+                            await video.play();
+                            this.hasTorch = Boolean(stream.getVideoTracks()[0]?.getCapabilities?.().torch);
+                            this.active = true;
+                            this.scanning = true;
+                            this.status = 'Arahkan kamera ke kode QRIS';
+                            this.scanFrame();
+                        } catch (reason) {
+                            const name = reason?.name;
+                            this.error = name === 'NotAllowedError' || name === 'PermissionDeniedError'
+                                ? 'Izin kamera ditolak. Izinkan Camera di pengaturan browser, lalu tekan Coba lagi.'
+                                : name === 'NotFoundError' ? 'Kamera tidak ditemukan pada perangkat ini.'
+                                : 'Kamera tidak dapat dibuka. Pastikan HTTPS aktif dan kamera tidak dipakai aplikasi lain.';
+                            this.status = 'Kamera belum aktif';
+                            this.stopCamera();
+                        }
+                    },
+
+                    scanFrame() {
+                        if (!this.scanning || !this.stream) return;
+                        const video = this.$refs.video;
+                        const canvas = this.$refs.canvas;
+                        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth) {
+                            const width = Math.min(video.videoWidth, 1280);
+                            canvas.width = width;
+                            canvas.height = Math.round((width / video.videoWidth) * video.videoHeight);
+                            const context = canvas.getContext('2d', { willReadFrequently: true });
+                            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            const image = context.getImageData(0, 0, canvas.width, canvas.height);
+                            const code = window.jsQR?.(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+                            if (code?.data && !this.resultSent) {
+                                this.resultSent = true;
+                                this.payload = code.data;
+                                this.status = 'QRIS berhasil terbaca';
+                                Livewire.dispatch('scan', { raw: code.data });
+                                Livewire.dispatch('qris-scanned', { payload: code.data });
+                                this.stopCamera();
+                                return;
+                            }
+                        }
+                        this.frame = requestAnimationFrame(() => this.scanFrame());
+                    },
+
+                    async toggleTorch() {
+                        const track = this.stream?.getVideoTracks()[0];
+                        if (!track || !this.hasTorch) return;
+                        try {
+                            this.torch = !this.torch;
+                            await track.applyConstraints({ advanced: [{ torch: this.torch }] });
+                        } catch {
+                            this.error = 'Flash tidak tersedia di perangkat ini.';
+                        }
+                    },
+
+                    readImage(file) {
+                        if (!file) return;
+                        const image = new Image();
+                        const url = URL.createObjectURL(file);
+                        image.onload = () => {
+                            const canvas = this.$refs.canvas;
+                            canvas.width = image.naturalWidth;
+                            canvas.height = image.naturalHeight;
+                            const context = canvas.getContext('2d', { willReadFrequently: true });
+                            context.drawImage(image, 0, 0);
+                            const data = context.getImageData(0, 0, canvas.width, canvas.height);
+                            const code = window.jsQR?.(data.data, data.width, data.height, { inversionAttempts: 'attemptBoth' });
+                            URL.revokeObjectURL(url);
+                            if (code?.data) {
+                                this.payload = code.data;
+                                this.status = 'QRIS berhasil terbaca';
+                                Livewire.dispatch('scan', { raw: code.data });
+                                Livewire.dispatch('qris-scanned', { payload: code.data });
+                            } else this.error = 'QR tidak terbaca. Gunakan foto yang lebih jelas dan coba lagi.';
+                        };
+                        image.src = url;
+                    },
+
+                    reset() {
+                        this.stopCamera();
+                        this.payload = '';
+                        this.error = '';
+                        this.status = 'Siap memindai QRIS';
+                        this.resultSent = false;
+                    }
+                };
+            }
+        </script>
+    @endscript
 </div>
