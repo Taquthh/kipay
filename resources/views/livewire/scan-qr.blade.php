@@ -2,61 +2,218 @@
     x-data="window.qrisScanner()"
     x-init="init()"
     x-on:livewire:navigated.window="init()"
-    class="min-h-screen bg-slate-100 px-4 py-8 text-slate-900"
+    class="fixed inset-0 z-50 overflow-hidden bg-slate-950 text-white"
+    style="padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);"
 >
-    <section class="mx-auto max-w-md overflow-hidden rounded-3xl bg-white shadow-xl">
-        <header class="bg-gradient-to-br from-blue-700 via-blue-600 to-emerald-500 p-6 text-white">
-            <p class="text-sm text-white/75">Kipay</p>
-            <h1 class="mt-1 text-2xl font-bold">Scan QRIS</h1>
-            <p class="mt-1 text-sm text-white/80">Pembaca QR aman untuk Android dan iOS</p>
-        </header>
+    {{-- ================= STEP 0 — KAMERA FULLSCREEN ================= --}}
+    @if ($payStep === 0)
+        <div class="relative h-full w-full">
+            <video x-ref="video" autoplay muted playsinline class="absolute inset-0 h-full w-full object-cover" aria-label="Kamera pemindai QRIS"></video>
+            <canvas x-ref="canvas" class="hidden"></canvas>
 
-        <div class="p-5">
-            <div class="relative aspect-[4/5] overflow-hidden rounded-2xl bg-slate-950">
-                <video x-ref="video" autoplay muted playsinline class="h-full w-full object-cover" aria-label="Kamera pemindai QRIS"></video>
-                <canvas x-ref="canvas" class="hidden"></canvas>
-                <div class="pointer-events-none absolute inset-0 grid place-items-center">
-                    <div class="h-56 w-56 rounded-2xl border-2 border-emerald-400 shadow-[0_0_0_999px_rgb(0_0_0/0.38)]"></div>
+            {{-- placeholder saat kamera belum aktif --}}
+            <div x-show="!active" class="absolute inset-0 grid place-items-center bg-gradient-to-b from-slate-900 to-slate-950 px-10 text-center">
+                <div>
+                    <div class="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-full bg-white/10">
+                        <svg viewBox="0 0 24 24" class="h-8 w-8 text-emerald-400" fill="none" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7V5a1 1 0 0 1 1-1h2M4 17v2a1 1 0 0 0 1 1h2M20 7V5a1 1 0 0 0-1-1h-2M20 17v2a1 1 0 0 1-1 1h-2M4 12h16" /></svg>
+                    </div>
+                    <p class="text-sm text-slate-300" x-text="status"></p>
                 </div>
-                <div x-show="!active" class="absolute inset-0 grid place-items-center p-8 text-center text-white">
-                    <p>Tekan tombol di bawah untuk mengaktifkan kamera</p>
-                </div>
-                <p x-show="active && !payload" x-text="status" class="absolute inset-x-4 bottom-4 rounded-xl bg-black/60 p-3 text-center text-xs text-white backdrop-blur"></p>
             </div>
 
-            <p x-text="status" class="mt-3 text-center text-sm text-slate-500"></p>
+            {{-- gelap di luar bingkai + bingkai pemindai dengan efek scan digital --}}
+            <div x-show="active" class="pointer-events-none absolute inset-0 grid place-items-center">
+                <div class="relative h-64 w-64">
+                    <div class="absolute inset-0 rounded-[28px] shadow-[0_0_0_999px_rgba(2,6,23,0.55)]"></div>
 
-            <div x-show="error" x-text="error" role="alert" class="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700"></div>
+                    {{-- sudut bingkai --}}
+                    <div class="absolute -left-0.5 -top-0.5 h-9 w-9 rounded-tl-[18px] border-l-[3px] border-t-[3px] border-emerald-400"></div>
+                    <div class="absolute -right-0.5 -top-0.5 h-9 w-9 rounded-tr-[18px] border-r-[3px] border-t-[3px] border-emerald-400"></div>
+                    <div class="absolute -bottom-0.5 -left-0.5 h-9 w-9 rounded-bl-[18px] border-b-[3px] border-l-[3px] border-emerald-400"></div>
+                    <div class="absolute -bottom-0.5 -right-0.5 h-9 w-9 rounded-br-[18px] border-b-[3px] border-r-[3px] border-emerald-400"></div>
 
-            <div x-show="payload" class="mt-4 rounded-xl bg-emerald-50 p-4">
-                <p class="text-xs font-semibold text-emerald-700">Payload QRIS</p>
-                <p x-text="payload" class="mt-1 break-all text-sm text-emerald-950"></p>
+                    {{-- garis pindai digital --}}
+                    <div x-show="scanning && !payload" class="absolute inset-x-2 top-2 h-0.5 rounded-full bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_2px_rgba(52,211,153,0.85)]" style="animation: kipay-scanline 2.1s ease-in-out infinite;"></div>
+                </div>
             </div>
 
-            <div class="mt-4 grid grid-cols-2 gap-2">
-                <button type="button" x-on:click="startCamera()" class="rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white">
-                    <span>Buka kamera</span>
+            {{-- app bar --}}
+            <div class="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
+                <button type="button" onclick="history.back()" class="grid h-10 w-10 place-items-center rounded-full bg-black/35 backdrop-blur">
+                    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
                 </button>
-                <label class="cursor-pointer rounded-xl border border-slate-200 px-4 py-3 text-center text-sm font-bold text-slate-700">
-                    Pilih foto
-                    <input type="file" accept="image/*" capture="environment" class="sr-only" x-on:change="readImage($event.target.files[0])">
-                </label>
+                <p class="text-sm font-semibold tracking-wide">Scan QRIS</p>
+                <button type="button" x-show="hasTorch" x-on:click="toggleTorch()" class="grid h-10 w-10 place-items-center rounded-full backdrop-blur transition" :class="torch ? 'bg-emerald-400 text-slate-900' : 'bg-black/35 text-white'">
+                    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor"><path d="M13 2 3 14h6l-1 8 11-13h-6l1-7z" /></svg>
+                </button>
+                <div x-show="!hasTorch" class="h-10 w-10"></div>
             </div>
 
-            <button x-show="hasTorch" type="button" x-on:click="toggleTorch()" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold">
-                <span x-text="torch ? 'Matikan flash' : 'Nyalakan flash'"></span>
-            </button>
+            {{-- status & error --}}
+            <div class="absolute inset-x-0 bottom-0 space-y-3 bg-gradient-to-t from-slate-950/95 via-slate-950/60 to-transparent px-5 pb-6 pt-14">
+                <p x-text="status" class="text-center text-sm text-slate-200"></p>
+                <div x-show="error" x-text="error" x-cloak role="alert" class="rounded-xl bg-red-500/15 p-3 text-center text-xs text-red-300"></div>
+                @if ($errorMessage)
+                    <div class="rounded-xl bg-red-500/15 p-3 text-center text-xs text-red-300">{{ $errorMessage }}</div>
+                @endif
 
-            <button x-show="payload" type="button" x-on:click="reset()" class="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold">
-                Scan lagi
+                <div class="flex gap-3">
+                    <button type="button" x-on:click="startCamera()" class="flex-1 rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 py-3.5 text-center text-sm font-bold shadow-lg shadow-emerald-900/30">
+                        <span x-text="active ? 'Kamera aktif' : 'Aktifkan kamera'"></span>
+                    </button>
+                    <label class="grid w-14 cursor-pointer place-items-center rounded-2xl border border-white/15 bg-white/5">
+                        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.6-4.6a2 2 0 0 1 2.8 0L16 16m-2-2 1.6-1.6a2 2 0 0 1 2.8 0L20 14M4 8h.01M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>
+                        <input type="file" accept="image/*" capture="environment" class="sr-only" x-on:change="readImage($event.target.files[0])">
+                    </label>
+                </div>
+
+                <button type="button" x-on:click="$dispatch('toggle-manual')" x-data="{}" class="w-full text-center text-xs font-medium text-slate-400 underline decoration-slate-600 underline-offset-4">
+                    Masukkan kode QRIS manual
+                </button>
+                <div x-data="{ open: false }" x-on:toggle-manual.window="open = !open" x-show="open" x-cloak class="flex gap-2 pt-1">
+                    <input type="text" wire:model="manualPayload" placeholder="KIPAY-MCH-..." class="flex-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white placeholder:text-slate-500">
+                    <button type="button" wire:click="quickManualScan" class="rounded-xl bg-white/10 px-4 text-xs font-semibold">Cek</button>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ================= STEP 1 — KONFIRMASI PEMBAYARAN ================= --}}
+    @if ($payStep === 1 && $payTarget)
+        <div class="relative flex h-full flex-col bg-gradient-to-b from-blue-800 via-blue-700 to-slate-950">
+            <div class="absolute -top-16 -right-16 h-56 w-56 rounded-full bg-emerald-400/20 blur-3xl"></div>
+            <div class="absolute -bottom-24 -left-10 h-64 w-64 rounded-full bg-blue-400/10 blur-3xl"></div>
+
+            <div class="relative flex items-center justify-between px-4 pt-4">
+                <button type="button" wire:click="resetScan" class="grid h-10 w-10 place-items-center rounded-full bg-white/10 backdrop-blur">
+                    <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <p class="text-sm font-semibold tracking-wide">{{ $payMode === 'merchant' ? 'Bayar ke Toko' : 'Transfer' }}</p>
+                <div class="h-10 w-10"></div>
+            </div>
+
+            <div class="relative mt-2 flex items-center gap-3 px-6">
+                <div class="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-white text-lg font-bold text-blue-700">{{ $payTarget['initial'] }}</div>
+                <div class="min-w-0">
+                    <p class="truncate text-base font-bold">{{ $payTarget['title'] }}</p>
+                    <p class="truncate text-xs text-blue-100/80">{{ $payTarget['subtitle'] }}</p>
+                </div>
+            </div>
+
+            <form wire:submit.prevent="pay" class="relative mt-4 flex flex-1 flex-col overflow-hidden rounded-t-[32px] bg-white px-6 pb-6 pt-7 text-slate-900">
+                <div class="mx-auto mb-5 h-1.5 w-10 rounded-full bg-slate-200"></div>
+
+                @if ($errorMessage)
+                    <div class="mb-4 rounded-xl bg-red-50 p-3 text-center text-xs font-medium text-red-600">{{ $errorMessage }}</div>
+                @endif
+
+                <div class="flex-1 space-y-5 overflow-y-auto">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-400">Nominal</label>
+                        <div class="mt-1 flex items-end gap-1 border-b-2 border-slate-100 pb-2 focus-within:border-emerald-500">
+                            <span class="pb-1 text-xl font-bold text-slate-400">Rp</span>
+                            <input type="number" min="1000" inputmode="numeric" wire:model="payAmount" placeholder="0" class="w-full border-0 bg-transparent p-0 text-3xl font-extrabold tracking-tight text-slate-900 outline-none placeholder:text-slate-300" autofocus>
+                        </div>
+                        @error('payAmount') <p class="mt-1 text-xs font-medium text-red-500">{{ $message }}</p> @enderror
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold text-slate-400">Catatan (opsional)</label>
+                        <input type="text" wire:model="note" maxlength="60" placeholder="Untuk apa transaksi ini?" class="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-emerald-500">
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold text-slate-400">PIN Transaksi</label>
+                        <div
+                            x-data="window.kipayPinPad('{{ collect(range(0,5))->implode(',') }}')"
+                            x-init="$watch('pin', v => $wire.set('pin', v))"
+                            class="mt-2 flex justify-center gap-2.5"
+                        >
+                            <template x-for="i in 6" :key="i">
+                                <input
+                                    type="password" inputmode="numeric" maxlength="1"
+                                    x-ref="'box' + (i - 1)"
+                                    x-model="digits[i - 1]"
+                                    x-on:input="onInput(i - 1, $event)"
+                                    x-on:keydown.backspace="onBackspace(i - 1, $event)"
+                                    class="h-12 w-10 rounded-xl border-2 border-slate-200 text-center text-xl font-bold text-slate-900 outline-none focus:border-emerald-500"
+                                >
+                            </template>
+                        </div>
+                        @error('pin') <p class="mt-2 text-center text-xs font-medium text-red-500">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+
+                <button type="submit" class="mt-5 w-full rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 py-4 text-center text-sm font-bold text-white shadow-lg shadow-emerald-900/20 disabled:opacity-50" wire:loading.attr="disabled" wire:target="pay">
+                    <span wire:loading.remove wire:target="pay">Bayar Sekarang</span>
+                    <span wire:loading wire:target="pay">Memproses...</span>
+                </button>
+            </form>
+        </div>
+    @endif
+
+    {{-- ================= STEP 2 — BERHASIL ================= --}}
+    @if ($payStep === 2)
+        <div class="flex h-full flex-col items-center justify-center bg-slate-950 px-8 text-center">
+            <div class="grid h-20 w-20 place-items-center rounded-full bg-emerald-500/15" style="animation: kipay-pop .45s ease-out;">
+                <svg viewBox="0 0 24 24" class="h-10 w-10 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2.4"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <p class="mt-5 text-sm text-slate-400">{{ $payMode === 'merchant' ? 'Pembayaran berhasil' : 'Transfer berhasil' }}</p>
+            <p class="mt-1 text-3xl font-extrabold">Rp {{ number_format((int) $payAmount, 0, ',', '.') }}</p>
+            <p class="mt-1 text-sm text-slate-400">{{ $payMode === 'merchant' ? 'ke' : 'kepada' }} {{ $payTarget['title'] ?? '' }}</p>
+
+            <div class="mt-6 w-full rounded-2xl border border-white/10 bg-white/5 p-4 text-left text-xs">
+                <div class="flex justify-between py-1.5">
+                    <span class="text-slate-400">No. Referensi</span>
+                    <span class="font-semibold">{{ $lastRef }}</span>
+                </div>
+                <div class="flex justify-between py-1.5">
+                    <span class="text-slate-400">Status</span>
+                    <span class="font-semibold text-emerald-400">Sukses</span>
+                </div>
+            </div>
+
+            <button type="button" wire:click="resetScan" class="mt-8 w-full rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 py-4 text-sm font-bold shadow-lg shadow-emerald-900/20">
+                Selesai
             </button>
         </div>
-    </section>
+    @endif
+
+    <style>
+        @keyframes kipay-scanline {
+            0%   { top: 6px; opacity: .2; }
+            50%  { top: calc(100% - 8px); opacity: 1; }
+            100% { top: 6px; opacity: .2; }
+        }
+        @keyframes kipay-pop {
+            0%   { transform: scale(0.6); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        [x-cloak] { display: none !important; }
+    </style>
 
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js" defer></script>
 
     @script
         <script>
+            window.kipayPinPad = function kipayPinPad() {
+                return {
+                    digits: ['', '', '', '', '', ''],
+                    get pin() { return this.digits.join(''); },
+                    onInput(index, event) {
+                        const value = event.target.value.replace(/\D/g, '').slice(-1);
+                        this.digits[index] = value;
+                        if (value && index < 5) this.$refs['box' + (index + 1)].focus();
+                    },
+                    onBackspace(index, event) {
+                        if (!this.digits[index] && index > 0) {
+                            this.digits[index - 1] = '';
+                            this.$refs['box' + (index - 1)].focus();
+                        }
+                    }
+                };
+            };
+
             window.qrisScanner = function qrisScanner() {
                 return {
                     active: false,
@@ -77,6 +234,7 @@
                         this.$watch('payload', (value) => {
                             if (value) this.stopCamera();
                         });
+                        this.startCamera();
                     },
 
                     stopCamera() {
@@ -155,6 +313,7 @@
                             if (code?.data && !this.resultSent) {
                                 this.resultSent = true;
                                 this.payload = code.data;
+                                this.$wire.scan(code.data);
                                 this.status = 'QRIS berhasil terbaca';
                                 Livewire.dispatch('scan', { raw: code.data });
                                 Livewire.dispatch('qris-scanned', { payload: code.data });
@@ -191,7 +350,7 @@
                             URL.revokeObjectURL(url);
                             if (code?.data) {
                                 this.payload = code.data;
-                                this.status = 'QRIS berhasil terbaca';
+                                this.$wire.scan(code.data);
                                 Livewire.dispatch('scan', { raw: code.data });
                                 Livewire.dispatch('qris-scanned', { payload: code.data });
                             } else this.error = 'QR tidak terbaca. Gunakan foto yang lebih jelas dan coba lagi.';
