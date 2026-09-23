@@ -16,6 +16,9 @@ class Dashboard extends Component
     public string $successMessage = '';
     public $amount;
 
+    // batas atas top-up dummy: 999.999.999.999 (hampir 1 triliun)
+    public const MAX_TOPUP = 999999999999;
+
     public function setTab(string $tab): void
     {
         $this->tab = in_array($tab, ['beranda', 'riwayat']) ? $tab : 'beranda';
@@ -26,6 +29,11 @@ class Dashboard extends Component
         $this->reset('amount');
         $this->resetValidation();
         $this->showTopUp = true;
+    }
+
+    public function setQuickAmount($value): void
+    {
+        $this->amount = $value;
     }
 
     public function closeAll(): void
@@ -41,7 +49,10 @@ class Dashboard extends Component
 
     public function topUp(): void
     {
-        $this->validate(['amount' => 'required|numeric|min:10000|max:10000000']);
+        $this->validate([
+            'amount' => 'required|numeric|min:10000|max:' . self::MAX_TOPUP,
+        ]);
+
         $user = Auth::user();
 
         DB::transaction(function () use ($user) {

@@ -32,20 +32,24 @@
         @if ($tab === 'beranda')
             <div class="grid gap-4 md:grid-cols-3">
                 <section class="rounded-2xl bg-white p-5 shadow-lg shadow-slate-200/70 md:col-span-2">
-                    <div class="flex items-start justify-between">
-                        <div>
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
                             <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Saldo KiPay</p>
                             <div class="mt-1 flex items-center gap-2">
-                                <p class="text-3xl font-bold text-slate-800">
-                                    @if ($hideBalance) Rp •••••• @else Rp {{ number_format($wallet->balance, 0, ',', '.') }} @endif
+                                <p class="truncate text-[clamp(1.25rem,6vw,1.875rem)] font-bold leading-tight text-slate-800" style="font-variant-numeric: tabular-nums;">
+                                    @if ($hideBalance)
+                                        <span class="whitespace-nowrap">Rp ••••••</span>
+                                    @else
+                                        <span class="whitespace-nowrap">Rp {{ number_format($wallet->balance, 0, ',', '.') }}</span>
+                                    @endif
                                 </p>
-                                <button wire:click="$toggle('hideBalance')" class="text-slate-400 hover:text-slate-600">
+                                <button wire:click="$toggle('hideBalance')" class="shrink-0 text-slate-400 hover:text-slate-600">
                                     <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.04 12.32a1.01 1.01 0 010-.64C3.42 7.51 7.36 4.5 12 4.5c4.64 0 8.57 3.01 9.96 7.18.07.21.07.43 0 .64C20.58 16.49 16.64 19.5 12 19.5c-4.64 0-8.57-3.01-9.96-7.18z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                                 </button>
                             </div>
-                            <p class="mt-1 text-xs text-slate-400">{{ $user->whatsapp }}</p>
+                            <p class="mt-1 truncate text-xs text-slate-400">{{ $user->whatsapp }}</p>
                         </div>
-                        <button wire:click="openTopUp" class="flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        <button wire:click="openTopUp" class="flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
                             <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14"/></svg> Isi Saldo
                         </button>
                     </div>
@@ -122,14 +126,40 @@
             <div class="w-full max-w-md rounded-t-3xl bg-white p-6 md:rounded-2xl">
                 <div class="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200 md:hidden"></div>
                 <h3 class="text-lg font-bold text-slate-800">Isi Saldo (Dummy)</h3>
+
                 <form wire:submit="topUp">
                     <div class="relative mt-4">
                         <span class="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">Rp</span>
-                        <input type="number" wire:model="amount" class="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-lg font-semibold focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                        <input
+                            type="number"
+                            min="10000"
+                            max="{{ \App\Livewire\Dashboard::MAX_TOPUP }}"
+                            wire:model="amount"
+                            placeholder="0"
+                            class="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-lg font-semibold focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                        >
                     </div>
+                    @error('amount') <p class="mt-1.5 text-xs font-medium text-rose-500">{{ $message }}</p> @enderror
+
+                    {{-- Quick amount, biar gampang isi nominal besar tanpa ngetik panjang --}}
+                    <div class="mt-3 grid grid-cols-3 gap-2">
+                        @foreach ([100000 => '100rb', 1000000 => '1jt', 5000000 => '5jt', 10000000 => '10jt', 100000000 => '100jt', 1000000000 => '1M'] as $val => $label)
+                            <button
+                                type="button"
+                                wire:click="setQuickAmount({{ $val }})"
+                                class="rounded-lg border border-slate-200 py-2 text-xs font-semibold text-slate-600 transition hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600"
+                            >
+                                {{ $label }}
+                            </button>
+                        @endforeach
+                    </div>
+
                     <div class="mt-5 flex gap-2">
                         <button type="button" wire:click="closeAll" class="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-semibold text-slate-600">Batal</button>
-                        <button type="submit" class="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-500 py-3 text-sm font-bold text-white">Isi Saldo</button>
+                        <button type="submit" wire:loading.attr="disabled" wire:target="topUp" class="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-emerald-500 py-3 text-sm font-bold text-white disabled:opacity-60">
+                            <span wire:loading.remove wire:target="topUp">Isi Saldo</span>
+                            <span wire:loading wire:target="topUp">Memproses...</span>
+                        </button>
                     </div>
                 </form>
             </div>
