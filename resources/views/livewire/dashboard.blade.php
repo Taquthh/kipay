@@ -20,7 +20,7 @@
                 <nav class="mr-2 hidden items-center gap-1 md:flex">
                     <button wire:click="setTab('beranda')"
                         class="rounded-full px-4 py-2 text-sm font-medium transition {{ $tab === 'beranda' ? 'bg-white text-blue-700' : 'text-white/80 hover:bg-white/10' }}">Beranda</button>
-                    <button wire:click="openScan"
+                    <button wire:click="openScan" onclick="window.kipayPrewarmCamera()"
                         class="rounded-full px-4 py-2 text-sm font-medium text-white/80 transition hover:bg-white/10">Scan QRIS</button>
                     <button wire:click="setTab('riwayat')"
                         class="rounded-full px-4 py-2 text-sm font-medium transition {{ $tab === 'riwayat' ? 'bg-white text-blue-700' : 'text-white/80 hover:bg-white/10' }}">Riwayat</button>
@@ -67,7 +67,7 @@
                         Tombol "QR Saya" dinonaktifkan bersama fitur Tampilkan QRIS — kode lama disimpan di bawah untuk rollback.
                     --}}
                     <div class="mt-5 grid grid-cols-3 gap-2 border-t border-slate-100 pt-5">
-                        <button wire:click="openScan" class="group flex flex-col items-center gap-2">
+                        <button wire:click="openScan" onclick="window.kipayPrewarmCamera()" class="group flex flex-col items-center gap-2">
                             <span class="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600 transition group-hover:bg-emerald-100">
                                 <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM13.5 13.5h3v3h-3v-3zM18 18h2.25v2.25H18V18z"/></svg>
                             </span>
@@ -154,7 +154,7 @@
                 <span class="text-[10px] font-medium">Riwayat</span>
             </button>
 
-            <button wire:click="openScan"
+            <button wire:click="openScan" onclick="window.kipayPrewarmCamera()"
                 class="absolute -top-6 left-1/2 flex h-16 w-16 -translate-x-1/2 items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-emerald-500 text-white shadow-xl shadow-blue-500/40 ring-4 ring-slate-100">
                 <svg class="h-7 w-7" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM13.5 13.5h3v3h-3v-3zM18 18h2.25v2.25H18V18z"/></svg>
             </button>
@@ -277,7 +277,7 @@
                     <div x-show="failed" x-cloak class="absolute inset-x-6 top-1/2 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
                         <p class="mb-4 text-sm text-slate-600">Kamera tidak bisa diakses. Pastikan browser diizinkan mengakses kamera, lalu coba lagi. Atau unggah gambar QR dari galeri.</p>
                         <div class="flex flex-col gap-2">
-                            <button type="button" x-on:click="failed = false; start(false)"
+                            <button type="button" x-on:click="window.kipayPrewarmCamera(); failed = false; start()"
                                 class="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white">Coba Lagi</button>
                             <button type="button" x-on:click="$refs.fileInput.click()"
                                 class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600">Upload QR</button>
@@ -448,6 +448,27 @@
         --}}
         <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
         <script>
+            /* =====================================================================
+             | PREWARM KAMERA
+             | Browser (terutama Safari iOS, dan makin ketat di Android) hanya mengizinkan
+             | prompt kamera jika getUserMedia() dipanggil LANGSUNG di dalam event klik
+             | pengguna. Karena tombol scan juga memicu wire:click (roundtrip ke server)
+             | sebelum sheet scan tampil, "izin" dari klik itu bisa keburu hangus ketika
+             | Alpine baru memanggil kamera setelah DOM diperbarui — hasilnya kamera
+             | ditolak (NotAllowedError) meski perangkat sebenarnya punya kamera.
+             |
+             | Solusi: panggil getUserMedia() langsung di onclick mentah (bukan menunggu
+             | Livewire), simpan Promise-nya, lalu begitu sheet scan render, pakai ulang
+             | stream tersebut alih-alih meminta izin lagi.
+             |=====================================================================*/
+            window.kipayPendingStream = null;
+            window.kipayPrewarmCamera = function () {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+                window.kipayPendingStream = navigator.mediaDevices
+                    .getUserMedia({ video: { facingMode: { exact: 'environment' } }, audio: false })
+                    .catch(() => navigator.mediaDevices.getUserMedia({ video: true, audio: false }));
+            };
+
             document.addEventListener('alpine:init', () => {
                 Alpine.data('kipayScanner', () => ({
                     stream: null,
@@ -458,45 +479,56 @@
                     torchOn: false,
                     _track: null,
 
-                    start(withDelay = true) {
+                    async start() {
                         this.loading = true;
                         this.failed = false;
                         this.hasTorch = false;
                         this.torchOn = false;
 
-                        const begin = async () => {
-                            if (typeof jsQR === 'undefined') {
-                                this.loading = false; this.failed = true; return;
-                            }
-                            try {
-                                await this.openCamera();
-                                this.loading = false;
-                                this.checkTorchSupport();
-                                this.loopScan();
-                            } catch (err) {
-                                console.error(err);
-                                this.loading = false;
-                                this.failed = true;
-                            }
-                        };
-
-                        if (withDelay) setTimeout(begin, 350); else begin();
+                        if (typeof jsQR === 'undefined') {
+                            this.loading = false; this.failed = true; return;
+                        }
+                        try {
+                            await this.openCamera();
+                            this.loading = false;
+                            this.checkTorchSupport();
+                            this.loopScan();
+                        } catch (err) {
+                            console.error(err);
+                            this.loading = false;
+                            this.failed = true;
+                        }
                     },
 
                     async openCamera() {
-                        // Coba kamera belakang dulu (HP). Jika tidak ada (mis. laptop/komputer),
-                        // fallback ke kamera apa pun yang tersedia.
-                        try {
-                            this.stream = await navigator.mediaDevices.getUserMedia({
-                                video: { facingMode: { exact: 'environment' } },
-                                audio: false,
-                            });
-                        } catch (e1) {
-                            this.stream = await navigator.mediaDevices.getUserMedia({
-                                video: true,
-                                audio: false,
-                            });
+                        // 1) Pakai stream hasil "prewarm" dari onclick tombol (lihat window.kipayPrewarmCamera)
+                        //    kalau ada — ini yang membuat kamera tetap dianggap diminta dalam gesture pengguna.
+                        if (window.kipayPendingStream) {
+                            const pending = window.kipayPendingStream;
+                            window.kipayPendingStream = null;
+                            try {
+                                this.stream = await pending;
+                            } catch (e) {
+                                this.stream = null;
+                            }
                         }
+
+                        // 2) Kalau belum ada (mis. dibuka lewat "Coba Lagi", atau prewarm gagal),
+                        //    baru minta izin di sini sebagai fallback.
+                        if (!this.stream) {
+                            try {
+                                this.stream = await navigator.mediaDevices.getUserMedia({
+                                    video: { facingMode: { exact: 'environment' } },
+                                    audio: false,
+                                });
+                            } catch (e1) {
+                                this.stream = await navigator.mediaDevices.getUserMedia({
+                                    video: true,
+                                    audio: false,
+                                });
+                            }
+                        }
+
                         const video = this.$refs.video;
                         video.srcObject = this.stream;
                         await video.play();
