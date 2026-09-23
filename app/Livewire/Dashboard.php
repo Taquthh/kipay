@@ -9,6 +9,7 @@ use App\Models\Wallet;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 class Dashboard extends Component
@@ -18,13 +19,10 @@ class Dashboard extends Component
 
     /** Panel */
     public bool $showTopUp   = false;
-    // Fitur "Tampilkan QRIS" (QR pribadi) dinonaktifkan — tidak dibutuhkan di web KiPay.
-    // Dibiarkan sebagai komentar (bukan dihapus) agar mudah diaktifkan kembali jika suatu saat diperlukan.
-    // public bool $showQr = false;
-    public bool $showScan    = false;   // sheet scan (kamera / upload)
+    public bool $showScan    = false;   // sheet scan (kamera / upload / manual)
     public bool $hideBalance = false;
 
-    /** Notifikasi modal (pengganti session flash agar tidak "tertanam" di background) */
+    /** Notifikasi modal */
     public bool $showSuccessModal = false;
     public string $successMessage = '';
 
@@ -54,10 +52,45 @@ class Dashboard extends Component
         $this->tab = in_array($tab, ['beranda', 'riwayat']) ? $tab : 'beranda';
     }
 
+    /**
+     * Dipanggil oleh wire:click="openScan" pada tombol "Scan QRIS" — jalur UTAMA
+     * untuk membuka sheet. Ini SENGAJA dipertahankan (bukan cuma event JS) supaya
+     * sheet tetap terbuka lewat Livewire meskipun untuk alasan apapun JS gagal
+     * dieksekusi di sisi klien; kamera tetap diminta secara terpisah & sinkron
+     * lewat onclick="KipayScanner.openSheet()" pada tombol yang sama.
+     */
     public function openScan(): void
     {
         $this->resetScan();
         $this->showScan = true;
+    }
+
+    /**
+     * Jalur cadangan: event JS "kipay-scan-opened" (dipicu dari KipayScanner.openSheet()).
+     * Idempotent dengan openScan() di atas.
+     */
+    #[On('kipay-scan-opened')]
+    public function onScanOpened(): void
+    {
+        $this->resetScan();
+        $this->showScan = true;
+    }
+
+    #[On('kipay-scan-closed')]
+    public function onScanClosed(): void
+    {
+        $this->showScan = false;
+        $this->resetScan();
+    }
+
+    /**
+     * Menerima payload apapun sumbernya — hasil decode kamera, upload gambar,
+     * atau input manual — semuanya lewat jalur yang sama ini.
+     */
+    #[On('kipay-scan-result')]
+    public function onScanResult(?string $payload = null): void
+    {
+        $this->scan($payload);
     }
 
     public function openTopUp(): void
@@ -78,7 +111,6 @@ class Dashboard extends Component
 
     public function closeAll(): void
     {
-        // $showQr dihapus dari sini karena fiturnya dinonaktifkan (lihat komentar properti di atas).
         $this->showTopUp = $this->showScan = false;
         $this->resetScan();
     }
@@ -90,17 +122,7 @@ class Dashboard extends Component
     }
 
     /* =====================================================
-     | QR personal milik user (untuk menerima transfer teman)
-     | DINONAKTIFKAN — tidak dibutuhkan di web KiPay saat ini.
-     | Simpan sebagai komentar untuk memudahkan rollback.
-     |=====================================================*/
-    // public function getMyPayloadProperty(): string
-    // {
-    //     return 'KIPAY-USR-' . Auth::id();
-    // }
-
-    /* =====================================================
-     | STEP 1 — resolve payload (kamera JS / upload gambar)
+     | STEP 1 — resolve payload (kamera JS / upload gambar / manual)
      |=====================================================*/
     public function scan(?string $raw = null): void
     {
@@ -109,7 +131,7 @@ class Dashboard extends Component
         $this->showScan = true;
 
         if ($this->payload === '') {
-            $this->errorMessage = 'QR tidak terbaca, coba lagi.';
+            $this->errorMessage = 'QR tidak terbaca, coba lagi atau gunakan input manual.';
 
             return;
         }
@@ -119,7 +141,7 @@ class Dashboard extends Component
             $merchant = Merchant::where('qr_code_payload', $this->payload)->first();
 
             if (! $merchant) {
-                $this->errorMessage = 'QR Code tidak valid atau merchant tidak ditemukan.';
+                $this->errorMessage = 'QR Code tidak valid atau merchant tidak ditemukan. Payload: ' . $this->payload;
 
                 return;
             }
@@ -171,7 +193,7 @@ class Dashboard extends Component
             return;
         }
 
-        $this->errorMessage = 'QR Code tidak dikenali oleh KiPay.';
+        $this->errorMessage = 'QR Code tidak dikenali oleh KiPay. Payload mentah: ' . $this->payload;
     }
 
     /* =====================================================
@@ -203,7 +225,6 @@ class Dashboard extends Component
 
         try {
             DB::transaction(function () use ($user, $merchant, $receiverId, $refOut, $refIn) {
-                // Kunci baris dompet pengirim & penerima
                 $senderWallet   = Wallet::where('user_id', $user->id)->lockForUpdate()->first();
                 $receiverWallet = Wallet::where('user_id', $receiverId)->lockForUpdate()->first();
 
@@ -261,7 +282,6 @@ class Dashboard extends Component
             return;
         }
 
-        // Notifikasi WhatsApp (queue)
         $nominal = 'Rp ' . number_format($this->payAmount, 0, ',', '.');
 
         if ($merchant) {
@@ -320,7 +340,6 @@ class Dashboard extends Component
         $this->reset('amount');
         $this->showTopUp = false;
 
-        // Notifikasi sukses ditampilkan sebagai modal mengambang, bukan flash tertanam di halaman.
         $this->successMessage = "Top-Up berhasil, saldo kamu bertambah {$nominal}.";
         $this->showSuccessModal = true;
     }
