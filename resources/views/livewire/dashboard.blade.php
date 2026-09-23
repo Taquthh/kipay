@@ -1,7 +1,7 @@
 <div class="min-h-screen bg-slate-100 pb-28 md:pb-10">
 
     {{-- ================= HEADER ================= --}}
-    <header class="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-600 to-emerald-500 pb- 6pt-6 text-white">
+    <header class="relative overflow-hidden bg-gradient-to-br from-blue-700 via-blue-600 to-emerald-500 pb-6 pt-6 text-white">
         <div class="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10"></div>
         <div class="pointer-events-none absolute -bottom-24 -left-10 h-56 w-56 rounded-full bg-emerald-300/20"></div>
 
@@ -107,6 +107,31 @@
                     @endif
                 </section>
             </div>
+
+            {{-- Input QR Manual (di luar menu Scan QRIS) --}}
+            <section class="mt-4 rounded-2xl bg-white p-5 shadow-lg shadow-slate-200/70">
+                <div class="mb-1 flex items-center gap-2">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"/></svg>
+                    </span>
+                    <h2 class="text-sm font-bold text-slate-800">Punya Kode QR / Payload? Masukkan Manual</h2>
+                </div>
+                <p class="mb-3 text-xs text-slate-400">Tidak perlu buka kamera. Tempel atau ketik payload QR merchant/teman di sini, mis. <code>KIPAY-MCH-1-1732012345</code>.</p>
+
+                @if ($errorMessage && ! $showScan)
+                    <div class="mb-3 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{{ $errorMessage }}</div>
+                @endif
+
+                <form wire:submit="quickManualScan" class="flex gap-2">
+                    <input type="text" wire:model="manualPayload" placeholder="KIPAY-MCH-1-169..."
+                        class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
+                    <button type="submit" wire:loading.attr="disabled" wire:target="quickManualScan"
+                        class="shrink-0 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">
+                        <span wire:loading.remove wire:target="quickManualScan">Proses</span>
+                        <span wire:loading wire:target="quickManualScan">...</span>
+                    </button>
+                </form>
+            </section>
 
             <section class="mt-4 rounded-2xl bg-white p-5 shadow-lg shadow-slate-200/70">
                 <div class="mb-3 flex items-center justify-between">
@@ -232,7 +257,7 @@
                         <p class="text-xs">Membuka kamera...</p>
                     </div>
 
-                    {{-- Panel gagal --}}
+                    {{-- Panel gagal (kamera/JS) --}}
                     <div id="kipay-failed" style="display:none" class="absolute inset-x-6 top-1/2 z-20 -translate-y-1/2 rounded-2xl bg-white p-5 text-center shadow-xl">
                         <p id="kipay-fail-message" class="mb-1 text-sm text-slate-600"></p>
                         <p id="kipay-fail-detail" style="display:none" class="mb-4 text-[10px] text-slate-300"></p>
@@ -244,25 +269,33 @@
                         </div>
                     </div>
 
-                    {{-- bottom sheet: input manual SELALU TAMPIL (bukan lagi toggle "mode tester")
-                         + Upload QR dari galeri. Ini alasan utama tombol "tidak bisa dipencet"
-                         sebelumnya: input manual disembunyikan lewat toggle. Sekarang selalu ada
-                         di layar dan selalu bisa langsung diketik/dipencet. --}}
+                    {{-- bottom sheet: input manual SELALU TAMPIL + Upload QR dari galeri --}}
                     <div class="absolute inset-x-0 bottom-0 z-20 max-h-[75%] overflow-y-auto rounded-t-3xl bg-white px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] pt-4 shadow-2xl">
                         <div class="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200"></div>
+
+                        {{-- FIX: sebelumnya $errorMessage dari hasil scan (payload salah / merchant sendiri /
+                             merchant tidak ditemukan) TIDAK PERNAH ditampilkan di step 0, jadi input manual
+                             / scan yang gagal terlihat seperti "diam saja". Sekarang ditampilkan di sini. --}}
+                        @if ($errorMessage)
+                            <div class="mb-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">
+                                {{ $errorMessage }}
+                            </div>
+                        @endif
 
                         <div class="mb-4 rounded-2xl bg-gradient-to-r from-blue-600 to-emerald-500 px-4 py-3 text-center text-xs font-semibold text-white">
                             Arahkan kamera, unggah gambar QR, atau ketik payload manual
                         </div>
 
                         <div class="mb-4">
-                            <label class="mb-1 block text-xs font-semibold text-slate-500">Masukkan Payload QR Manual</label>
+                            <label class="mb-1 block text-xs font-semibold text-slate-500">Masukkan Payload QR Manual (Mode Tester)</label>
                             <div class="flex gap-2">
                                 <input type="text" id="kipay-manual-input" placeholder="KIPAY-MCH-1-169..."
+                                    onkeydown="if(event.key==='Enter'){event.preventDefault();KipayScanner.submitManualPayload();}"
                                     class="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200">
                                 <button type="button" onclick="KipayScanner.submitManualPayload()"
                                     class="shrink-0 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-semibold text-white">Kirim</button>
                             </div>
+                            <p class="mt-1 text-[10px] text-slate-400">Salin persis payload dari QR merchant (contoh: <code>KIPAY-MCH-1-1732012345</code>).</p>
                         </div>
 
                         <button type="button" onclick="document.getElementById('kipay-file-input').click()"
@@ -418,14 +451,19 @@
         <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
         <script>
             /* =====================================================================
-             | KipayScanner — arsitektur SAMA seperti kode awal (prewarm on click +
-             | MutationObserver mulai/hentikan kamera saat #kipay-scan-root
-             | muncul/hilang). Yang berubah HANYA:
-             | 1. openCamera() dibungkus timeout 8 detik (openCameraWithTimeout)
-             |    supaya tidak pernah menggantung selamanya di "Membuka kamera...".
-             | 2. Ada fungsi submitManualPayload() untuk input manual yang sekarang
-             |    SELALU TAMPIL (bukan toggle).
-             | 3. Ada debug(...) yang menulis status ke #kipay-camera-debug di layar.
+             | KipayScanner
+             | FIX (dibanding versi sebelumnya):
+             | 1. Semua jalur pengiriman hasil scan (kamera, upload file, input
+             |    manual/tester) sekarang lewat SATU fungsi sendScanPayload(),
+             |    yang mencoba @this.call('scan', value) lalu fallback ke
+             |    Livewire.dispatch('kipay-scan-result', {payload}) kalau @this
+             |    gagal dipanggil karena alasan apapun.
+             | 2. Input manual bisa dikirim dengan tombol Enter, tidak cuma klik.
+             | 3. Pesan error dari server ($errorMessage) sekarang benar-benar
+             |    dirender di Blade pada step 0 (lihat bagian bottom sheet di
+             |    atas) — sebelumnya server sudah mengisi error tapi tidak ada
+             |    tempat untuk menampilkannya, jadi scan yang gagal terlihat
+             |    seperti "diam saja" tanpa umpan balik.
              |=====================================================================*/
 
             window.kipayPendingStream = null;
@@ -443,6 +481,25 @@
 
                 window.kipayPendingStream.catch(() => {});
             };
+
+            // Satu pintu untuk mengirim hasil scan ke Livewire, dengan fallback.
+            function sendScanPayload(value) {
+                try {
+                    if (typeof window.$wire !== 'undefined' && window.$wire && window.$wire.call) {
+                        window.$wire.call('scan', value);
+                        return;
+                    }
+                    // @this dikompilasi Blade menjadi referensi ke instance komponen ini.
+                    @this.call('scan', value);
+                } catch (e) {
+                    console.warn('[KipayScanner] @this.call gagal, fallback ke Livewire.dispatch', e);
+                    if (window.Livewire && typeof window.Livewire.dispatch === 'function') {
+                        window.Livewire.dispatch('kipay-scan-result', { payload: value });
+                    } else {
+                        console.error('[KipayScanner] Livewire tidak ditemukan, tidak bisa mengirim hasil scan.');
+                    }
+                }
+            }
 
             window.KipayScanner = (function () {
                 let stream = null;
@@ -604,7 +661,7 @@
                             const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
                             if (code && code.data) {
                                 stopCamera();
-                                @this.call('scan', code.data);
+                                sendScanPayload(code.data);
                                 return;
                             }
                         }
@@ -724,7 +781,7 @@
                         setLoading(false);
                         if (code && code.data) {
                             debug('QR terbaca dari gambar.');
-                            @this.call('scan', code.data);
+                            sendScanPayload(code.data);
                         } else {
                             debug('Tidak ada QR yang terbaca dari gambar ini.');
                             setFailed(true, 'other', 'jsQR tidak menemukan kode QR pada gambar ini. Coba gambar yang lebih jelas, atau gunakan input manual.');
@@ -732,18 +789,22 @@
                     } catch (e) {
                         setLoading(false);
                         debug('Gagal membaca gambar: ' + e.message);
-                        @this.call('scan', '');
+                        sendScanPayload('');
                     }
                 }
 
-                // Input manual — SELALU TAMPIL, tidak lagi di balik toggle.
+                // Input manual (mode tester) — SELALU TAMPIL, bisa dikirim via klik atau Enter.
                 function submitManualPayload() {
                     const input = el('kipay-manual-input');
                     if (!input) return;
                     const value = (input.value || '').trim();
-                    if (!value) return;
+                    if (!value) {
+                        debug('Payload manual kosong.');
+                        return;
+                    }
                     stopCamera();
-                    @this.call('scan', value);
+                    debug('Mengirim payload manual: ' + value);
+                    sendScanPayload(value);
                 }
 
                 return {

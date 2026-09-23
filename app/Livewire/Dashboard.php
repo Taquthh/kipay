@@ -29,6 +29,13 @@ class Dashboard extends Component
     /** Top-up */
     public $amount;
 
+    /**
+     * Input QR manual di LUAR sheet Scan QRIS (langsung di halaman Beranda).
+     * Terpisah dari $payload (yang dipakai di dalam sheet) supaya form di
+     * beranda punya state sendiri dan tidak saling menimpa.
+     */
+    public string $manualPayload = '';
+
     /** ===== Alur scan =====
      *  payStep 0 = belum scan, 1 = konfirmasi bayar/transfer, 2 = sukses
      */
@@ -57,7 +64,7 @@ class Dashboard extends Component
      * untuk membuka sheet. Ini SENGAJA dipertahankan (bukan cuma event JS) supaya
      * sheet tetap terbuka lewat Livewire meskipun untuk alasan apapun JS gagal
      * dieksekusi di sisi klien; kamera tetap diminta secara terpisah & sinkron
-     * lewat onclick="KipayScanner.openSheet()" pada tombol yang sama.
+     * lewat onclick="window.kipayPrewarmCamera()" pada tombol yang sama.
      */
     public function openScan(): void
     {
@@ -66,7 +73,7 @@ class Dashboard extends Component
     }
 
     /**
-     * Jalur cadangan: event JS "kipay-scan-opened" (dipicu dari KipayScanner.openSheet()).
+     * Jalur cadangan: event JS "kipay-scan-opened" (dipicu dari sisi klien bila ada).
      * Idempotent dengan openScan() di atas.
      */
     #[On('kipay-scan-opened')]
@@ -85,7 +92,9 @@ class Dashboard extends Component
 
     /**
      * Menerima payload apapun sumbernya — hasil decode kamera, upload gambar,
-     * atau input manual — semuanya lewat jalur yang sama ini.
+     * atau input manual di dalam sheet — semuanya lewat jalur yang sama ini.
+     * Ini adalah fallback JS (lihat sendScanPayload() di Blade) kalau @this.call()
+     * gagal dipanggil langsung.
      */
     #[On('kipay-scan-result')]
     public function onScanResult(?string $payload = null): void
@@ -119,6 +128,27 @@ class Dashboard extends Component
     {
         $this->showSuccessModal = false;
         $this->successMessage = '';
+    }
+
+    /**
+     * Entry point QR manual dari halaman Beranda (di LUAR sheet Scan QRIS).
+     * Membersihkan input lalu memakai logika resolve payload yang sama
+     * persis dengan yang dipakai kamera/upload/manual di dalam sheet, supaya
+     * hasilnya konsisten: kalau valid -> sheet konfirmasi terbuka (payStep 1),
+     * kalau tidak valid -> sheet scan terbuka menampilkan pesan error.
+     */
+    public function quickManualScan(): void
+    {
+        $value = trim((string) $this->manualPayload);
+        $this->manualPayload = '';
+
+        if ($value === '') {
+            $this->errorMessage = 'Masukkan payload QR terlebih dahulu.';
+
+            return;
+        }
+
+        $this->scan($value);
     }
 
     /* =====================================================
