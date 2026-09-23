@@ -37,6 +37,17 @@
                 </div>
             </div>
 
+            {{-- transisi instan begitu QR terbaca, langsung menuju halaman bayar --}}
+            <div x-show="loadingPay" x-cloak class="absolute inset-0 z-20 grid place-items-center bg-slate-950/90 backdrop-blur-sm">
+                <div class="flex flex-col items-center gap-4">
+                    <div class="relative h-14 w-14">
+                        <div class="absolute inset-0 rounded-full border-4 border-white/10"></div>
+                        <div class="absolute inset-0 rounded-full border-4 border-emerald-400 border-t-transparent animate-spin"></div>
+                    </div>
+                    <p class="text-sm font-medium text-slate-200">Menyiapkan pembayaran...</p>
+                </div>
+            </div>
+
             {{-- app bar --}}
             <div class="absolute inset-x-0 top-0 flex items-center justify-between px-4 pt-4">
                 <button type="button" onclick="history.back()" class="grid h-10 w-10 place-items-center rounded-full bg-black/35 backdrop-blur">
@@ -58,11 +69,12 @@
                 @endif
 
                 <div class="flex gap-3">
-                    <button type="button" x-on:click="startCamera()" class="flex-1 rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 py-3.5 text-center text-sm font-bold shadow-lg shadow-emerald-900/30">
-                        <span x-text="active ? 'Kamera aktif' : 'Aktifkan kamera'"></span>
+                    <button type="button" x-show="!active" x-cloak x-on:click="startCamera()" class="flex-1 rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 py-3.5 text-center text-sm font-bold shadow-lg shadow-emerald-900/30">
+                        <span x-text="error ? 'Coba lagi' : 'Aktifkan kamera'"></span>
                     </button>
-                    <label class="grid w-14 cursor-pointer place-items-center rounded-2xl border border-white/15 bg-white/5">
+                    <label class="grid cursor-pointer place-items-center rounded-2xl border border-white/15 bg-white/5" :class="active ? 'flex-1 flex-row gap-2 py-3.5' : 'w-14'">
                         <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="1.6"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.6-4.6a2 2 0 0 1 2.8 0L16 16m-2-2 1.6-1.6a2 2 0 0 1 2.8 0L20 14M4 8h.01M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" /></svg>
+                        <span x-show="active" x-cloak class="text-sm font-semibold">Pilih dari galeri</span>
                         <input type="file" accept="image/*" capture="environment" class="sr-only" x-on:change="readImage($event.target.files[0])">
                     </label>
                 </div>
@@ -103,6 +115,20 @@
             <form wire:submit.prevent="pay" class="relative mt-4 flex flex-1 flex-col overflow-hidden rounded-t-[32px] bg-white px-6 pb-6 pt-7 text-slate-900">
                 <div class="mx-auto mb-5 h-1.5 w-10 rounded-full bg-slate-200"></div>
 
+                <div wire:loading.flex wire:target="pay" class="absolute inset-0 z-20 hidden flex-col items-center justify-center gap-4 rounded-t-[32px] bg-white/95 backdrop-blur-sm">
+                    <div class="relative h-16 w-16">
+                        <div class="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+                        <div class="absolute inset-0 rounded-full border-4 border-emerald-500 border-t-transparent animate-spin"></div>
+                        <div class="absolute inset-0 grid place-items-center">
+                            <svg viewBox="0 0 24 24" class="h-6 w-6 text-emerald-500" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3" /></svg>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-sm font-semibold text-slate-800">Memproses pembayaran...</p>
+                        <p class="mt-0.5 text-xs text-slate-400">Mohon tunggu, jangan tutup halaman ini</p>
+                    </div>
+                </div>
+
                 @if ($errorMessage)
                     <div class="mb-4 rounded-xl bg-red-50 p-3 text-center text-xs font-medium text-red-600">{{ $errorMessage }}</div>
                 @endif
@@ -125,18 +151,18 @@
                     <div>
                         <label class="text-xs font-semibold text-slate-400">PIN Transaksi</label>
                         <div
-                            x-data="window.kipayPinPad('{{ collect(range(0,5))->implode(',') }}')"
+                            x-data="window.kipayPinPad()"
                             x-init="$watch('pin', v => $wire.set('pin', v))"
                             class="mt-2 flex justify-center gap-2.5"
                         >
-                            <template x-for="i in 6" :key="i">
+                            <template x-for="(d, i) in digits" :key="i">
                                 <input
-                                    type="password" inputmode="numeric" maxlength="1"
-                                    x-ref="'box' + (i - 1)"
-                                    x-model="digits[i - 1]"
-                                    x-on:input="onInput(i - 1, $event)"
-                                    x-on:keydown.backspace="onBackspace(i - 1, $event)"
-                                    class="h-12 w-10 rounded-xl border-2 border-slate-200 text-center text-xl font-bold text-slate-900 outline-none focus:border-emerald-500"
+                                    type="password" inputmode="numeric" maxlength="1" autocomplete="one-time-code"
+                                    :value="digits[i]"
+                                    x-on:input="onInput(i, $event)"
+                                    x-on:keydown.backspace="onBackspace(i, $event)"
+                                    class="h-12 w-10 rounded-xl border-2 text-center text-xl font-bold text-slate-900 outline-none transition focus:border-emerald-500"
+                                    :class="digits[i] ? 'border-emerald-300' : 'border-slate-200'"
                                 >
                             </template>
                         </div>
@@ -145,8 +171,7 @@
                 </div>
 
                 <button type="submit" class="mt-5 w-full rounded-2xl bg-gradient-to-br from-blue-600 to-emerald-500 py-4 text-center text-sm font-bold text-white shadow-lg shadow-emerald-900/20 disabled:opacity-50" wire:loading.attr="disabled" wire:target="pay">
-                    <span wire:loading.remove wire:target="pay">Bayar Sekarang</span>
-                    <span wire:loading wire:target="pay">Memproses...</span>
+                    Bayar Sekarang
                 </button>
             </form>
         </div>
@@ -203,12 +228,18 @@
                     onInput(index, event) {
                         const value = event.target.value.replace(/\D/g, '').slice(-1);
                         this.digits[index] = value;
-                        if (value && index < 5) this.$refs['box' + (index + 1)].focus();
+                        event.target.value = value;
+                        if (value) {
+                            const next = event.target.nextElementSibling;
+                            if (next) next.focus();
+                        }
                     },
                     onBackspace(index, event) {
-                        if (!this.digits[index] && index > 0) {
+                        if (this.digits[index]) return;
+                        const prev = event.target.previousElementSibling;
+                        if (prev) {
                             this.digits[index - 1] = '';
-                            this.$refs['box' + (index - 1)].focus();
+                            prev.focus();
                         }
                     }
                 };
@@ -227,6 +258,7 @@
                     scanning: false,
                     resultSent: false,
                     initialized: false,
+                    loadingPay: false,
 
                     init() {
                         if (this.initialized) return;
@@ -312,12 +344,13 @@
                             const code = window.jsQR?.(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
                             if (code?.data && !this.resultSent) {
                                 this.resultSent = true;
+                                this.scanning = false;
                                 this.payload = code.data;
+                                this.loadingPay = true;
+                                this.stopCamera();
                                 this.$wire.scan(code.data);
-                                this.status = 'QRIS berhasil terbaca';
                                 Livewire.dispatch('scan', { raw: code.data });
                                 Livewire.dispatch('qris-scanned', { payload: code.data });
-                                this.stopCamera();
                                 return;
                             }
                         }
@@ -350,6 +383,8 @@
                             URL.revokeObjectURL(url);
                             if (code?.data) {
                                 this.payload = code.data;
+                                this.loadingPay = true;
+                                this.stopCamera();
                                 this.$wire.scan(code.data);
                                 Livewire.dispatch('scan', { raw: code.data });
                                 Livewire.dispatch('qris-scanned', { payload: code.data });
